@@ -11,7 +11,6 @@
 #import matplotlib.pyplot as plt
 # import sys
 # sys.path.append('/Users/zifandeng/Nustore Files/PI/Code/Working_On/')
-#from Working_On.Ratios import *
 #from Working_On.stock_class import Stock
 
 
@@ -21,6 +20,8 @@
 import numpy as np
 import pandas as pd
 from stock_class import Stock
+from Ratios import *
+import matplotlib.pyplot as plt
 
 #%%
 
@@ -147,7 +148,7 @@ class Portfolio(object):
     def performance_matrix(self, annualization=252):
         ret_price = pd.merge(self.stock_returns(), self.port_returns(), left_index=True, right_index=True)
         ret_index = self.benchmark_returns()['index']
-        matrix = pandas.DataFrame({'Beta': ret_price.apply(get_beta, market=ret_index),
+        matrix = pd.DataFrame({'Beta': ret_price.apply(get_beta, market=ret_index),
                                    'Annualized Alpha': ret_price.apply(get_annulized_alpha, market=ret_index, annualization=annualization),
                                    'R Square': ret_price.apply(get_rsquare, market=ret_index),
                                    'Adj R Square': ret_price.apply(get_adj_rsquare, market=ret_index),
