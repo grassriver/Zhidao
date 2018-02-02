@@ -1,31 +1,13 @@
-
 # coding: utf-8
-
-# In[1]:
-
-
-#import numpy as np
-#import pandas as pd
-#import pandas as pandas
-#import sqlite3
-#import matplotlib.pyplot as plt
-# import sys
-# sys.path.append('/Users/zifandeng/Nustore Files/PI/Code/Working_On/')
-#from Working_On.stock_class import Stock
-
-
-# In[119]:
-
 
 import numpy as np
 import pandas as pd
 from stock_class import Stock
 from Ratios import *
 import matplotlib.pyplot as plt
+import max_drawdown as md
 
 #%%
-
-
 class Portfolio(object):
     """
     parameters:
@@ -35,7 +17,7 @@ class Portfolio(object):
                                              'shares': [1000, 1000]})
     """
 
-    def __init__(self, conn, code_list, start, end):
+    def __init__(self, conn, code_list, start='2017-01-01', end='2017-12-01'):
         self._conn = conn
         self._code_list = code_list
         self._start = start
@@ -58,10 +40,13 @@ class Portfolio(object):
 
     def add_stock(self, port, stock):
         if len(port) == 0:
-            port = stock
+            port = pd.DataFrame(stock)
         else:
-            port = port.merge(stock, left_index=True, right_index=True, how='outer')
+            port = port.merge(pd.DataFrame(stock), left_index=True, right_index=True, how='outer')
         return port
+
+    def code_list(self):
+        return self._code_list
 
     def port_price(self):
         return self._price
@@ -70,10 +55,10 @@ class Portfolio(object):
         return self._returns
 
     def port_returns(self):
-        port_return = pd.DataFrame({'Portfolio': np.log(self.port_daily_balance()) -
-                                    np.log(self.port_daily_balance().shift(1))})
-        port_return.dropna(axis=0, how='any', inplace=True)
-        return port_return
+        self._port_return = pd.DataFrame({'Portfolio': np.log(self.port_daily_balance()) -
+                                          np.log(self.port_daily_balance().shift(1))})
+        self._port_return.dropna(axis=0, how='any', inplace=True)
+        return self._port_return
 
     def add_benchmark(self, index_code='sh000001', price_type='close'):
         c = self._conn.cursor()
@@ -92,8 +77,7 @@ class Portfolio(object):
         return index
 
     def benchmark(self):
-        benchmark = self._benchmark
-        return benchmark
+        return self._benchmark
 
     def benchmark_info(self):
         return (self.benchmark()[['code', 'name']]).head(1)
@@ -149,15 +133,15 @@ class Portfolio(object):
         ret_price = pd.merge(self.stock_returns(), self.port_returns(), left_index=True, right_index=True)
         ret_index = self.benchmark_returns()['index']
         matrix = pd.DataFrame({'Beta': ret_price.apply(get_beta, market=ret_index),
-                                   'Annualized Alpha': ret_price.apply(get_annulized_alpha, market=ret_index, annualization=annualization),
-                                   'R Square': ret_price.apply(get_rsquare, market=ret_index),
-                                   'Adj R Square': ret_price.apply(get_adj_rsquare, market=ret_index),
-                                   'Martket Correlation': ret_price.apply(get_correlation, market=ret_index),
-                                   'Sharpe Ratio': ret_price.apply(get_sharpe_ratio, annualization=annualization),
-                                   'Sortino Ratio': ret_price.apply(get_sortino_ratio, annualization=annualization),
-                                   'Treynor Ratio': ret_price.apply(get_treynor_ratio, market=ret_index, annualization=annualization),
-                                   'Positive Period': ret_price.apply(positive_period),
-                                   'Gain/Loss Ratio': ret_price.apply(gain_loss_ratio)})
+                               'Annualized Alpha': ret_price.apply(get_annulized_alpha, market=ret_index, annualization=annualization),
+                               'R Square': ret_price.apply(get_rsquare, market=ret_index),
+                               'Adj R Square': ret_price.apply(get_adj_rsquare, market=ret_index),
+                               'Martket Correlation': ret_price.apply(get_correlation, market=ret_index),
+                               'Sharpe Ratio': ret_price.apply(get_sharpe_ratio, annualization=annualization),
+                               'Sortino Ratio': ret_price.apply(get_sortino_ratio, annualization=annualization),
+                               'Treynor Ratio': ret_price.apply(get_treynor_ratio, market=ret_index, annualization=annualization),
+                               'Positive Period': ret_price.apply(positive_period),
+                               'Gain/Loss Ratio': ret_price.apply(gain_loss_ratio)})
         return matrix
 
     def port_summary(self):
@@ -187,3 +171,16 @@ class Portfolio(object):
         port_matrix = pd.concat([ratios, perfomance_factors], axis=0)
 
         return port_matrix
+
+
+    def gen_drawdown_table(self, top=5):
+        drawdown_table = md.gen_drawdown_table(self.port_returns().iloc[:,0], top)
+        return drawdown_table
+    
+    def plot_drawdown_periods(self, top=5, ax=None, **kwargs):
+        ax = md.plot_drawdown_periods(self.port_returns().iloc[:,0], top, ax, **kwargs)
+        return ax
+    
+    def plot_drawdown_underwater(self, ax=None, **kwargs):
+        ax = md.plot_drawdown_underwater(self.port_returns().iloc[:,0], ax, **kwargs)
+        return ax

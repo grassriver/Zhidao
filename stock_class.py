@@ -6,6 +6,7 @@ Created on Sun Jan 28 11:54:35 2018
 """
 import numpy as np
 import pandas as pd
+import max_drawdown as md
 
 #%%
 
@@ -68,7 +69,8 @@ class Stock(object):
         return a pandas series of close price
         """
         df = pd.DataFrame.assign(self._price)
-        self._close_price = df['close']
+        self._close_price = df[['close']]
+        self._close_price.columns = ['close price']
         return self._close_price
 
     @property
@@ -79,7 +81,8 @@ class Stock(object):
         df = pd.DataFrame.assign(self._price)
         df['return'] = np.log(df['close'] / df.groupby(by='code')['close'].shift(1))
         df.dropna(axis=0, how='any', inplace=True)
-        self._daily_returns = df['return']
+        self._daily_returns = df[['return']]
+        self._daily_returns.columns = ['daily returns']
         return self._daily_returns
 
     @property
@@ -88,5 +91,19 @@ class Stock(object):
         return a pandas series of daily cumulative returns
         """
         self._daily_cum_returns = np.log(self._close_price / self._close_price.iloc[0])
-        self._daily_cum_returns.columns = ['daily_cum_returns']
+        self._daily_cum_returns.columns = ['daily cumulative returns']
         return self._daily_cum_returns
+    
+    def gen_drawdown_table(self, top=10):
+        drawdown_table = md.gen_drawdown_table(self.daily_returns['daily returns'], top)
+        return drawdown_table
+    
+    def plot_drawdown_periods(self, top=10, ax=None, **kwargs):
+        ax = md.plot_drawdown_periods(self.daily_returns['daily returns'], top, ax, **kwargs)
+        return ax
+    
+    def plot_drawdown_underwater(self, ax=None, **kwargs):
+        ax = md.plot_drawdown_underwater(self.daily_returns['daily returns'], ax, **kwargs)
+        return ax
+    
+        
