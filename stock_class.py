@@ -32,7 +32,13 @@ class Stock(object):
 
     def get_data(self, conn):
         c = conn.cursor()
-        c.execute('select * from stocks_price where code="%s"' % (self._code))
+        if isinstance(self._code, (type, str)):
+            c.execute('select * from stocks_price where code="%s"' % (self._code))
+        elif isinstance(self._code, (type, list)):
+            c.execute('select * from stocks_price where code in ("%s")' % ('","'.join(self._code)))
+        else:
+            raise ValueError('code can only be a string or a list')
+             
         stocks_price = pd.DataFrame(c.fetchall())
         if len(stocks_price) == 0:
             raise ValueError('no data fetched')
