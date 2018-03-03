@@ -8,6 +8,8 @@ import matplotlib.pyplot as plt
 import max_drawdown as md
 
 #%%
+
+
 class Portfolio(object):
     """
     parameters:
@@ -17,25 +19,27 @@ class Portfolio(object):
                                              'shares': [1000, 1000]})
     """
 
-    def __init__(self, conn, code_list, start='2017-01-01', end='2017-12-01'):
+    def __init__(self, conn, code_list, start='2017-01-01', end='2017-12-01', annualization=252):
         self._conn = conn
         self._code_list = code_list
         self._start = start
         self._end = end
         self._price, self._returns = self.construct()
         self._benchmark = self.add_benchmark()
+        self._annualization = annualization
 
     def construct(self):
         price = pd.DataFrame()
         returns = pd.DataFrame()
-        for code in self._code_list['code']:
-            stock_data = Stock(self._conn, code, self._start, self._end)
-            stock_price = stock_data.close_price
-            stock_price.columns = [code]
-            stock_return = stock_data.daily_returns
-            stock_return.columns = [code]
-            price = self.add_stock(price, stock_price)
-            returns = self.add_stock(returns, stock_return)
+#        for code in self._code_list['code']:
+        code_list = list(self._code_list['code'])
+        stock_data = Stock(self._conn, code_list, self._start, self._end)
+        stock_price = stock_data.close_price
+#        stock_price.columns = [code]
+        stock_return = stock_data.daily_returns
+#        stock_return.columns = [code]
+        price = self.add_stock(price, stock_price)
+        returns = self.add_stock(returns, stock_return)
         return price, returns
 
     def add_stock(self, port, stock):
@@ -123,21 +127,19 @@ class Portfolio(object):
 
     def allocation_plot(self):
         df = self.port_allocation()
-        get_ipython().magic('matplotlib inline')
-        ax = plt.figure()
+        plt.figure()
         plt.axes(aspect='equal')
         plt.pie(df['allocation'], autopct='%.1f%%')
         plt.legend(df.index, loc='lower right')
         plt.title('Portfolio Allocation')
-        return
 
     def port_balance_plot(self):
-        get_ipython().magic('matplotlib inline')
         plt.figure()
         balance = self.port_daily_balance()
         balance.plot(kind='area', grid=True, title='Portfolio Balance')
 
-    def performance_matrix(self, annualization=252):
+    def performance_matrix(self):
+        annualization=self._annualization
         ret_price = pd.merge(self.stock_returns(), self.port_returns(), left_index=True, right_index=True)
         ret_index = self.benchmark_returns()['index']
         matrix = pd.DataFrame({'Beta': ret_price.apply(Ratios.get_beta, market=ret_index),

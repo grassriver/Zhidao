@@ -4,6 +4,7 @@ import numpy as np
 import pandas
 #import math
 
+
 def get_return(df, code, start, end):
     series = df.loc[(df.loc[:, 'Date'] <= end) & (df.loc[:, 'Date'] >= start), code]
     price_series = pandas.DataFrame({'price': series,
@@ -16,12 +17,26 @@ def get_portfolio_return(stock, weight):
     stock = stock.fillna(0)
     return (stock * weight).apply(sum, 1)
 
-# Beta Calculation
-# Asset: Stock Daily Return Series
-# Market: Market Daily Return
-# RiskFree: Risk Free Rate, default 0
 
 def get_beta(asset, market, riskfree=0.0):
+    """
+    Calculates Portfolio Beta.
+
+    Parameters
+    ----------
+    asset:
+        np.series; portfolio returns
+    market: 
+        np.series; market returns
+    riskfree:
+        default 0.0; risk free rate, can be any floating number
+
+    Returns
+    -------
+    beta : float
+        The beta value.
+    """
+
     keep = ~(np.isnan(market) | np.isnan(asset))
     market = market[keep]
     asset = asset[keep]
@@ -32,13 +47,27 @@ def get_beta(asset, market, riskfree=0.0):
     cov = np.cov(market - riskfree, asset - riskfree)
     return round(cov[0, ][1] / cov[0, ][0], 4)
 
-# alpha Calculation
-# asset: Stock Daily return Series
-# market: market Daily return
-# RiskFree: Risk Free Rate, default 0
-# annulization: annualization factor
 
 def get_annulized_alpha(asset, market, annualization, riskfree=0.0):
+    """
+    Calculates Portfolio annualized alpha.
+
+    Parameters
+    ----------
+    asset:
+        np.series; portfolio returns.
+    market:
+        np.series; market returns
+    riskfree:
+        default 0.0; risk free rate, can be any floating number
+    annualization: 
+        integer; annualization factor
+
+    Returns
+    -------
+    alpha : float
+        The alpha value.
+    """
     keep = ~(np.isnan(market) | np.isnan(asset))
     market = market[keep]
     asset = asset[keep]
@@ -56,6 +85,23 @@ def get_annulized_alpha(asset, market, annualization, riskfree=0.0):
 # ANNUALIZATION: annualization factor
 
 def get_sharpe_ratio(asset, annualization, riskfree=0.0):
+    """
+    Calculates annualized sharpe ratio.
+
+    Parameters
+    ----------
+    asset:
+        np.series; portfolio returns.
+    riskfree:
+        default 0.0; risk free rate, can be any floating number
+    annualization:
+        integer; annualization factor
+
+    Returns
+    -------
+    sharpe ratio: float
+        The sharpe ratio value.
+    """
     keep = ~np.isnan(asset)
     asset = asset[keep]
     if len(asset) <= 1:
@@ -69,6 +115,24 @@ def get_sharpe_ratio(asset, annualization, riskfree=0.0):
 # Market: Market Daily Return
 
 def get_rsquare(asset, market, riskfree=0.0):
+    """
+    Calculates r-squared ratio.
+
+    Parameters
+    ----------
+    asset:
+        np.series; portfolio returns.
+    market: 
+        np.series; market returns
+    riskfree: 
+        default 0.0; risk free rate, can be any floating number
+
+    Returns
+    -------
+    R squared: float
+        The R-squared of fitted CAPM model.
+    """
+    
     keep = ~(np.isnan(market) | np.isnan(asset))
     market = market[keep]
     asset = asset[keep]
@@ -83,12 +147,26 @@ def get_rsquare(asset, market, riskfree=0.0):
     # ddof is applied to get unbiased estimator of std deviation
     return round(fit.rsquared, 4)
 
-# Adj R square Calculation
-# Asset: Stock Daily Return Series
-# RiskFree: Risk Free Rate, default 0
-# Market: Market Daily Return
-
 def get_adj_rsquare(asset, market, riskfree=0.0):
+    
+    """
+    Calculates adjusted r-squared ratio.
+
+    Parameters
+    ----------
+    asset:
+        np.series; portfolio returns.
+    market :
+        np.series; market returns
+    riskfree:
+        default 0.0; risk free rate, can be any floating number
+
+    Returns
+    -------
+    R squared: float
+        The adjusted R-squared of fitted CAPM model.
+    """
+    
     keep = ~(np.isnan(market) | np.isnan(asset))
     market = market[keep]
     asset = asset[keep]
@@ -104,12 +182,26 @@ def get_adj_rsquare(asset, market, riskfree=0.0):
     return round(fit.rsquared_adj, 4)
 
 
-# Sortino ratio Calculation
-# Asset: Stock Daily Return Series
-# RiskFree: Risk Free Rate, default 0
-# ANNUALIZATION: annualization factor
-
 def get_sortino_ratio(asset, annualization, riskfree=0.0):
+    
+    """
+    Calculates sortino ratio.
+
+    Parameters
+    ----------
+    asset:
+        np.series; portfolio returns.
+    annualization:
+        integer; annualization factor
+    riskfree:
+        default 0.0; risk free rate, can be any floating number
+
+    Returns
+    -------
+    sortino ratio: float
+        The sortino ratio.
+    """
+    
     keep = ~np.isnan(asset)
     asset = asset[keep]
     if len(asset) <= 1:
@@ -128,6 +220,27 @@ def get_sortino_ratio(asset, annualization, riskfree=0.0):
 # ANNUALIZATION: annualization factor
 
 def get_treynor_ratio(asset, market, annualization, riskfree=0.0):
+    
+    """
+    Calculates treynor ratio.
+
+    Parameters
+    ----------
+    asset:
+        np.series; portfolio returns.
+    market : 
+        np.series; market returns
+    annualization: 
+        integer; annualization factor
+    riskfree: 
+        default 0.0; risk free rate, can be any floating number
+
+    Returns
+    -------
+    treynor ratio: float
+        The treynor ratio.
+    """
+    
     keep = ~(np.isnan(market) | np.isnan(asset))
     market = market[keep]
     asset = asset[keep]
@@ -139,12 +252,22 @@ def get_treynor_ratio(asset, market, annualization, riskfree=0.0):
     return round(((np.mean(asset) - riskfree) / beta) * np.sqrt(annualization), 4)
 
 
-
-# Correlation Calculation
-# Asset: Stock Daily Return Series
-# Market: Market Daily Return Series
-
 def get_correlation(asset, market):
+    """
+    Calculates portfolio and market correlation.
+
+    Parameters
+    ----------
+    asset:
+        np.series; portfolio returns.
+    market:
+        np.series; market returns
+
+    Returns
+    -------
+    correlation: float
+        The correlation between portfolio return and market return.
+    """
     keep = ~(np.isnan(market) | np.isnan(asset))
     market = market[keep]
     asset = asset[keep]
@@ -160,16 +283,43 @@ def get_correlation(asset, market):
 # Weight: Stock Weight Dataframe
 
 def get_diversification_ratio(stock_ret, portfolio_ret, weight):
+    """
+    Calculates portfolio diversification ratio.
+
+    Parameters
+    ----------
+    stock_ret: 
+        pd.DataFrame; return for each stock in portfolio.
+    portfolio_ret: 
+        np.series; portfolio total return
+    market: 
+        np.series; market returns
+
+    Returns
+    -------
+    diversification ratio: float
+        The diversification ratio of the portfolio.
+    """
     portfolio_vol = np.std(portfolio_ret, ddof=1)
     stock_vol = stock_ret.apply(np.nanstd, ddof=1)
     weighted_stock_vol = sum(stock_vol * weight)
     return round(weighted_stock_vol / portfolio_vol, 4)
 
 
-# Positive Period
-# Asset: Stock Daily Return Series
-
 def positive_period(asset):
+    """
+    Calculates positive period duirng the hold period.
+
+    Parameters
+    ----------
+    asset: 
+        np.series; return of the portfolio during hold period 
+
+    Returns
+    -------
+    positive_period: interger
+        Number of positive period duirng the hold period.
+    """
     asset = asset.dropna()
     total_count = (len(asset))
     positive_count = (np.sum(asset > 0))
@@ -180,6 +330,21 @@ def positive_period(asset):
 # Gain Loss Ratio
 # Asset: Stock Daily Return Series
 def gain_loss_ratio(asset):
+    
+    """
+    Calculates gain to loss ratio.
+
+    Parameters
+    ----------
+    asset: 
+        np.series; return of the portfolio during hold period 
+    
+    Returns
+    -------
+    gain to loss ratio: float
+        the ratio of averaged total gain return to averaged total loss return.
+    """
+    
     asset = asset.dropna()
     gain = np.mean(asset[asset > 0])
     loss = -np.mean(asset[asset < 0])
@@ -187,6 +352,22 @@ def gain_loss_ratio(asset):
 
 
 def information_ratio(asset,market):
+    """
+    Calculates gain to loss ratio.
+
+    Parameters
+    ----------
+    asset: 
+        np.series; return of the portfolio during hold period 
+    market: 
+        np.series; market returns
+
+    Returns
+    -------
+    information ratio: float
+        the information ratio of the portfolio.
+    """
+     
     keep = ~(np.isnan(market) | np.isnan(asset))
     market = market[keep]
     asset = asset[keep]
@@ -234,3 +415,4 @@ def information_ratio(asset,market):
 
 # Positive Perid Sample Run
 # positive_period(stock.iloc[:,0])
+

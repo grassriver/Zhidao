@@ -17,10 +17,13 @@ class Stock(object):
     -----------
     conn: connection to database
         e.g. import sqlite3 as sql
-             conn = sql.connect('datapath/data.db')    
-    code; stock code
-    start: start date
-    end: end date
+             conn = sql.connect('datapath/data.db')                 
+    code: list
+        stock code.
+    start: string
+        start date.
+    end: string
+        end date.
     """
 
     def __init__(self, conn, code, start='2017-01-01', end='2017-12-01'):
@@ -75,8 +78,7 @@ class Stock(object):
         return a pandas series of close price
         """
         df = pd.DataFrame.assign(self._price)
-        self._close_price = df[['close']]
-        self._close_price.columns = ['close price']
+        self._close_price = df.pivot(columns='code', values='close')
         return self._close_price
 
     @property
@@ -87,8 +89,7 @@ class Stock(object):
         df = pd.DataFrame.assign(self._price)
         df['return'] = np.log(df['close'] / df.groupby(by='code')['close'].shift(1))
         df.dropna(axis=0, how='any', inplace=True)
-        self._daily_returns = df[['return']]
-        self._daily_returns.columns = ['daily returns']
+        self._daily_returns = df.pivot(columns='code', values='return')
         return self._daily_returns
 
     @property
