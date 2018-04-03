@@ -1,1 +1,7 @@
 __pycache__
+CONN_UI_DB
+
+*.xlsx
+*.pkl
+*.csv
+*.db

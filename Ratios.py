@@ -5,18 +5,24 @@ import pandas
 #import math
 
 
-def get_return(df, code, start, end):
-    series = df.loc[(df.loc[:, 'Date'] <= end) & (df.loc[:, 'Date'] >= start), code]
-    price_series = pandas.DataFrame({'price': series,
-                                     'lag_price': series.shift(1),
-                                     'price_return': np.log(series) - np.log(series.shift(1))})
-    price_series = price_series.dropna()
-    return(price_series.loc[:, 'price_return'])
 
-def get_portfolio_return(stock, weight):
-    stock = stock.fillna(0)
-    return (stock * weight).apply(sum, 1)
+def volatility(asset):
+    
+    """
+    Calculates volatility.
 
+    Parameters
+    ----------
+    asset:
+        np.series; portfolio returns
+    
+    Returns
+    -------
+    volatility : float
+        The volatility value.
+    """
+    
+    return round(np.nanstd(asset, ddof=1),4)
 
 def get_beta(asset, market, riskfree=0.0):
     """

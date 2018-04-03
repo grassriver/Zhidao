@@ -6,7 +6,8 @@ Created on Sun Jan 28 11:54:35 2018
 """
 import numpy as np
 import pandas as pd
-import max_drawdown as md
+import warnings
+#import max_drawdown as md
 
 #%%
 
@@ -32,41 +33,48 @@ class Stock(object):
         self._end = pd.to_datetime(end)
         self._conn = conn
         self._price = self.get_data(conn)
+        self._industry = self.get_industry(conn)
 
     def get_data(self, conn):
-        c = conn.cursor()
         if isinstance(self._code, (type, str)):
-            c.execute('select * from stocks_price where code="%s"' % (self._code))
+            query = 'select * from stocks_price where code="%s"' % (self._code)
         elif isinstance(self._code, (type, list)):
-            c.execute('select * from stocks_price where code in ("%s")' % ('","'.join(self._code)))
+            query = 'select * from stocks_price where code in ("%s")' % ('","'.join(self._code))
         else:
             raise ValueError('code can only be a string or a list')
              
-        stocks_price = pd.DataFrame(c.fetchall())
-        if len(stocks_price) == 0:
+        stocks_price = pd.read_sql(query, conn)
+        if stocks_price.empty:
             raise ValueError('no data fetched')
-        stocks_price.columns = ['index', 'date', 'open', 'close', 'high', 'low', 'volume', 'code']
         stocks_price['date'] = pd.to_datetime(stocks_price['date'])
         stocks_price.set_index('date', inplace=True)
-        if self.check_date(stocks_price):
-            self._price = stocks_price.iloc[(stocks_price.index >= self._start)
-                                            & (stocks_price.index <= self._end), :]
-        else:
-            raise ValueError('data start from {} and end at {}'.format(('data_start', 'data_end')))
+        self._price = pd.DataFrame()
+        for code in self._code:
+            temp = stocks_price[stocks_price.code==code]
+            temp2 = temp.iloc[(temp.index >= self._start) & (temp.index <= self._end), :]
+            if temp2.empty:
+                raise ValueError('No data for stock {} in start_to_end period.'.format(code))
+            elif self._start != temp2.index.min():
+                warnings.warn('Data of stock {} not available for start date'.format(code))
+            self._price = self._price.append(temp2)
 
         return self._price
-
-    def check_date(self, data):
-        data_start = data.index.min()
-        data_end = data.index.max()
-        if (data_start > self._start) | (data_end < self._end):
-            return False
-        else:
-            return True
-
+    
+    def get_industry(self,conn):
+        query = 'select code,name,industry from stock_basics where code in ("%s")' % ('","'.join(self._code))
+        industry = pd.read_sql(query, conn) 
+        if industry.empty:
+            industry = None
+        industry.set_index('code', inplace=True)
+        return industry
+    
     @property
     def code(self):
         return self._code
+
+    @property
+    def industry(self):
+        return self._industry
 
     @property
     def price(self):
@@ -79,6 +87,7 @@ class Stock(object):
         """
         df = pd.DataFrame.assign(self._price)
         self._close_price = df.pivot(columns='code', values='close')
+        self._close_price = self._close_price[self._code]
         return self._close_price
 
     @property
@@ -97,20 +106,25 @@ class Stock(object):
         """
         return a pandas series of daily cumulative returns
         """
-        self._daily_cum_returns = np.log(self._close_price / self._close_price.iloc[0])
-        self._daily_cum_returns.columns = ['daily cumulative returns']
+        df = self._price
+        daily_cum_returns = np.log(df.pivot(columns='code', values='close') / 
+                                   df.groupby(by='code')['close'].first())
+        self._daily_cum_returns = daily_cum_returns
         return self._daily_cum_returns
+        
+#        self._daily_cum_returns = np.log(self._close_price / self._close_price.iloc[0])
+#        return self._daily_cum_returns
     
-    def gen_drawdown_table(self, top=10):
-        drawdown_table = md.gen_drawdown_table(self.daily_returns['daily returns'], top)
-        return drawdown_table
-    
-    def plot_drawdown_periods(self, top=10, ax=None, **kwargs):
-        ax = md.plot_drawdown_periods(self.daily_returns['daily returns'], top, ax, **kwargs)
-        return ax
-    
-    def plot_drawdown_underwater(self, ax=None, **kwargs):
-        ax = md.plot_drawdown_underwater(self.daily_returns['daily returns'], ax, **kwargs)
-        return ax
+#    def gen_drawdown_table(self, top=10):
+#        drawdown_table = md.gen_drawdown_table(self.daily_returns['daily returns'], top)
+#        return drawdown_table
+#    
+#    def plot_drawdown_periods(self, top=10, ax=None, **kwargs):
+#        ax = md.plot_drawdown_periods(self.daily_returns['daily returns'], top, ax, **kwargs)
+#        return ax
+#    
+#    def plot_drawdown_underwater(self, ax=None, **kwargs):
+#        ax = md.plot_drawdown_underwater(self.daily_returns['daily returns'], ax, **kwargs)
+#        return ax
     
         

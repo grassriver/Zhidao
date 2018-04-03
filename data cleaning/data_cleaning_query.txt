@@ -1,0 +1,48 @@
+delete from report_data
+where rowid not in (
+	select min(rowid)
+	from report_data
+	group by code, date
+)
+
+delete from debtpaying_data
+where rowid not in (
+	select min(rowid)
+	from debtpaying_data
+	group by code, date
+)
+
+delete from growth_data
+where rowid not in (
+	select min(rowid)
+	from growth_data
+	group by code, date
+)
+
+delete from operation_data
+where rowid not in (
+	select min(rowid)
+	from operation_data
+	group by code, date
+)
+
+delete from profit_data
+where rowid not in (
+	select min(rowid)
+	from profit_data
+	group by code, date
+)
+
+delete from cashflow_data
+where rowid not in (
+	select min(rowid)
+	from cashflow_data
+	group by code, date
+)
+
+delete from adj_stocks_price
+where rowid not in (
+	select min(rowid)
+	from adj_stocks_price
+	group by code, date
+)
