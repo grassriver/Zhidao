@@ -7,10 +7,9 @@ import weekly_monthly_returns as wmr
 import matplotlib.pyplot as plt
 import max_drawdown as md
 import candlestick as cstick
+import warnings
 
 #%%
-
-
 class Portfolio(object):
     """
     parameters:
@@ -20,12 +19,19 @@ class Portfolio(object):
                                              'shares': [1000, 1000]})
     """
 
-    def __init__(self, conn, code_list, start='2017-01-01', end='2017-12-01', annualization=252):
+    def __init__(self, conn, code_list, start='2017-01-01', end='2017-12-01',
+                 annualization=252, backfill=False, stocks_price_old=None,
+                 business_calendar=None, industry=None, benchmark_old=None):
         self._conn = conn
         self._code_list = code_list
         self._start = start
         self._end = end
-        self._price, self._returns,self._industry = self.construct()
+        self._backfill = backfill
+        self._stocks_price_old = stocks_price_old
+        self._business_calendar = business_calendar
+        self._industry = industry
+        self._benchmark_old = benchmark_old
+        self._price, self._returns, self._industry = self.construct()
         self._benchmark = self.add_benchmark()
         self._annualization = annualization
 
@@ -35,7 +41,11 @@ class Portfolio(object):
         industry = pd.DataFrame()
 #        for code in self._code_list['code']:
         code_list = list(self._code_list['code'])
-        stock_data = Stock(self._conn, code_list, self._start, self._end)
+        stock_data = Stock(self._conn, code_list, self._start, self._end,
+                           backfill=self._backfill, 
+                           stocks_price_old=self._stocks_price_old,
+                           business_calendar=self._business_calendar,
+                           industry = self._industry)
         stock_price = stock_data.close_price
 #        stock_price.columns = [code]
         stock_return = stock_data.daily_returns
@@ -44,7 +54,7 @@ class Portfolio(object):
         price = self.add_stock(price, stock_price)
         returns = self.add_stock(returns, stock_return)
         industry = self.add_stock(industry, stock_industry)
-        return price,returns,industry
+        return price, returns, industry
 
     def add_stock(self, port, stock):
         if len(port) == 0:
@@ -55,21 +65,20 @@ class Portfolio(object):
 
     def industry(self):
         return self._industry
-    
+
     def stock_price(self):
         return self._price
 
     def stock_returns(self):
         return self._returns
-            
 
     def weekly_returns(self):
-        port = pd.DataFrame({'portfolio':self.port_daily_balance()})
+        port = pd.DataFrame({'portfolio': self.port_daily_balance()})
         price = pd.merge(self.stock_price(), port, left_index=True, right_index=True)
         return wmr.weekly_return(price)
 
     def monthly_returns(self):
-        port = pd.DataFrame({'portfolio':self.port_daily_balance()})
+        port = pd.DataFrame({'portfolio': self.port_daily_balance()})
         price = pd.merge(self.stock_price(), port, left_index=True, right_index=True)
         return wmr.monthly_return(price)
 
@@ -78,32 +87,44 @@ class Portfolio(object):
                                     np.log(self.port_daily_balance().shift(1))})
         port_return.dropna(axis=0, how='any', inplace=True)
         return port_return
-    
-    def get_bechmark(self, index_code, price_type):
-        c = self._conn.cursor()
-        c.execute('select * from index_price where code="%s"' % (index_code))
-        index = pd.DataFrame(c.fetchall())
+
+    def add_benchmark(self, index_code='sh000001', price_type='close'):
+        if self._benchmark_old is None:
+            query = 'select * from index_price where code="%s"' % (index_code)
+            index = pd.read_sql(query, self._conn)
+        else:
+            index = self._benchmark_old.copy()
         if len(index) == 0:
             raise ValueError('no data fetched')
-        index.columns = ['date', 'open', 'close', 'high', 'low', 'volume', 'code', 'name']
         index['date'] = pd.to_datetime(index['date'])
         index.set_index('date', inplace=True)
         index = index.iloc[(index.index >= self._start)
                            & (index.index <= self._end), :]
+        index = index.sort_index()
         index = index[[price_type, 'code', 'name']]
         index.columns = ['price', 'code', 'name']
         return index
+            
 
-    def add_benchmark(self, index_code='sh000001', price_type='close'):
-        return self.get_bechmark(index_code, price_type)
-    
-    def change_benchmark(self, index_code, price_type='close'):    
-        self._benchmark = self.get_bechmark(index_code, price_type)
+    def change_benchmark(self, index_code, price_type='close'):
+        query = 'select * from index_price where code="%s"' % (index_code)
+        index = pd.read_sql(query, self._conn)
 
+        if len(index) == 0:
+            raise ValueError('no data fetched')
+        index['date'] = pd.to_datetime(index['date'])
+        index.set_index('date', inplace=True)
+        index = index.iloc[(index.index >= self._start)
+                           & (index.index <= self._end), :]
+        index = index.sort_index()
+        index = index[[price_type, 'code', 'name']]
+        index.columns = ['price', 'code', 'name']
+        self._benchmark = index
+        
     def benchmark(self):
         benchmark = self._benchmark
         return benchmark
-    
+
     @property
     def benchmark_info(self):
         return (self.benchmark()[['code', 'name']]).head(1)
@@ -112,7 +133,7 @@ class Portfolio(object):
         price = self.benchmark()['price']
         index_return = pd.DataFrame({'index': np.log(price) - np.log(price.shift(1))})
         index_return.dropna(axis=0, how='any', inplace=True)
-        index_return = pd.merge(index_return, self.port_returns(), left_index=True, right_index=True,how = 'right')    
+        index_return = pd.merge(index_return, self.port_returns(), left_index=True, right_index=True, how='right')
         return index_return[['index']]
 
     def port_initial_shares(self):
@@ -131,16 +152,17 @@ class Portfolio(object):
         stock_balance = self.stock_daily_balance()
         balance = (stock_balance).sum(axis=1)
         return balance
-    
+
     def nav_plot(self):
         port_balance = pd.DataFrame(self.port_daily_balance())
-        port_nav = port_balance/port_balance.iloc[0,0]
+        port_nav = port_balance / port_balance.iloc[0, 0]
         port_nav.columns = ['portfolio']
         bench_balance = self.benchmark()[['price']]
-        bench_nav = bench_balance/bench_balance.iloc[0,0]
-        bench_nav.columns = ['benchmark'] 
-        nav = port_nav.merge(bench_nav,how = 'left',left_index = True,right_index = True)
+        bench_nav = bench_balance / bench_balance.iloc[0, 0]
+        bench_nav.columns = ['benchmark']
+        nav = port_nav.merge(bench_nav, how='left', left_index=True, right_index=True)
         fig = nav.plot()
+        plt.title('portfolio return vs benchmark return')
         return fig
 
     def port_allocation(self):
@@ -152,19 +174,19 @@ class Portfolio(object):
         df['allocation'] = df['market_cap'] / df['total']
         df = df.sort_index()
         return df[['initial_price', 'shares', 'market_cap', 'allocation']]
-    
+
     def industry_allocation(self):
-        allocation = round(self.port_allocation()*100,2)
+        allocation = round(self.port_allocation() * 100, 2)
         industry = self.industry()
-        df = pd.merge(industry,allocation,left_index=True, right_index=True, how='left')
-        df = df[['industry','allocation']]
-        df.columns = ['Industry','Allocation%']
+        df = pd.merge(industry, allocation, left_index=True, right_index=True, how='left')
+        df = df[['industry', 'allocation']]
+        df.columns = ['Industry', 'Allocation%']
         df = df.groupby('Industry').sum()
-        df['Sector_Code'] = range(1,len(df)+1)
+        df['Sector_Code'] = range(1, len(df) + 1)
         #self.allocation_plot(types = 'industry')
-        return df[['Sector_Code','Allocation%']]
-        
-    def allocation_plot(self,types = 'stocks'):
+        return df[['Sector_Code', 'Allocation%']]
+
+    def allocation_plot(self, types='stocks'):
         plt.figure()
         plt.axes(aspect='equal')
         if(types == 'stocks'):
@@ -173,18 +195,18 @@ class Portfolio(object):
             plt.legend(df.index, loc='lower right')
             plt.title('Portfolio Allocation')
         else:
-            plt.pie(self.industry_allocation()['Allocation%'],autopct='%.1f%%')
+            plt.pie(self.industry_allocation()['Allocation%'], autopct='%.1f%%')
             plt.legend(self.industry_allocation()['Sector_Code'], loc='lower right')
             plt.title('Industry Allocation')
         plt.show()
-        
+
     def port_balance_plot(self):
         plt.figure()
         balance = self.port_daily_balance()
         balance.plot(kind='area', grid=True, title='Portfolio Balance')
 
     def performance_matrix(self):
-        annualization=self._annualization
+        annualization = self._annualization
         ret_price = pd.merge(self.stock_returns(), self.port_returns(), left_index=True, right_index=True)
         ret_index = self.benchmark_returns()['index']
         matrix = pd.DataFrame({'Beta': ret_price.apply(ratio.get_beta, market=ret_index),
@@ -203,7 +225,7 @@ class Portfolio(object):
                                'Conditional VaR': ret_price.apply(var.conditional_var),
                                'Kurtosis': round(ret_price.kurtosis(), 4),
                                'Skewness': round(ret_price.skew(), 4),
-                               'Daily Volatility':ret_price.apply(ratio.volatility)})
+                               'Daily Volatility': ret_price.apply(ratio.volatility)})
         return matrix
 
     def port_summary(self):
@@ -211,7 +233,7 @@ class Portfolio(object):
 
         summary['allocation'] = round(summary['allocation'], 4) * 100
         summary.columns = ['Initial Price', 'Shares', 'Initial Balance', 'Allocation(%)']
-        summary['End Balance'] = self.stock_daily_balance().tail(1).iloc[0,]
+        summary['End Balance'] = self.stock_daily_balance().tail(1).iloc[0, ]
         summary.loc['Grand Total', :] = summary.sum(0)
         return summary
 
@@ -220,16 +242,16 @@ class Portfolio(object):
         ratios = pd.DataFrame(self.performance_matrix().loc['Portfolio', :])
 
         # Calculater Other Factors like: VaR, Volatility, Annual Return, etc
-        index_all = ['Diversification Ratio','Max Drawdown']
+        index_all = ['Diversification Ratio', 'Max Drawdown']
         # 1. Diversification Ratio
         weight = self.port_allocation()['allocation']
         div_ratio = ratio.get_diversification_ratio(stock_ret=self.stock_returns(), portfolio_ret=self.port_returns(), weight=weight)
         # 2. VaRs
-        drawdown = round(self.gen_drawdown_table().iloc[0,0], 4) 
+        drawdown = round(self.gen_drawdown_table().iloc[0, 0], 4)
         # 3. Returns
         # 4. Vols
         # Return factor
-        perfomance_factors = pd.DataFrame([div_ratio[0],drawdown], index=index_all)
+        perfomance_factors = pd.DataFrame([div_ratio[0], drawdown], index=index_all)
         perfomance_factors.columns = ['Portfolio']
         # bind
         port_matrix = pd.concat([ratios, perfomance_factors], axis=0)
@@ -247,7 +269,7 @@ class Portfolio(object):
     def plot_drawdown_underwater(self, ax=None, **kwargs):
         ax = md.plot_drawdown_underwater(self.port_returns().iloc[:, 0], ax, **kwargs)
         return ax
-    
-    def candle_stick_plot(self,code,stick = 'day',see = 'n'):
-        [fig, no_traing_days]=cstick.stock_plot(self._conn,stick,code,self._start,self._end,see)
-        return fig,no_traing_days
+
+    def candle_stick_plot(self, code, stick='day', see='n'):
+        [fig, no_traing_days] = cstick.stock_plot(self._conn, stick, code, self._start, self._end, see)
+        return fig, no_traing_days

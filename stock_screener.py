@@ -125,7 +125,7 @@ def get_data(conn,var,date,table_name,order='ascending',condition ='None',thresh
     else:
         return np.nan
 
-def select_top(conn,var,date,top = 30,order='ascending'):
+def select_top(conn_path,var,date,industry = 'None',since_ipo = {'condition': '>=', 't': 0},top = 30,order='ascending'):
        
     """ 
     select the first/last several stocks for user input stock factor
@@ -151,21 +151,32 @@ def select_top(conn,var,date,top = 30,order='ascending'):
     -------
     db : pandas dataframe
         The dataframe for queried stock information
-    """    
-    
+    """  
+    conn = sql.connect(conn_path+'/data.db')          
     freq,table_name = table_lookup(conn,var)
     date = date_freq_transfer(date,freq)
     db = get_data(conn,var,date,table_name,order = order)
     db = (db.drop_duplicates())
-    db = db.iloc[range(min(top,len(db)))]
+    industry_table = pd.read_excel(conn_path+'/Industry.xlsx',dtype=str)
+    db = pd.merge(db,industry_table,how = 'left',left_on = 'Code',right_on='Code')    
+    if industry == 'None':
+        db = db.iloc[range(min(top,len(db)))]
+        db[var+' rank in universe'] = range(1,len(db)+1)
+    else:
+        if isinstance(industry,str):
+            db = db[db['Industry']==(industry)]
+        else:
+            db = db[db['Industry'].isin(industry)] 
+        db = db.iloc[range(min(top,len(db)))]
+        db[var+' rank in selected industries'] = range(1,len(db)+1)
     return db
 
-def stock_screener_filter_condition(conn_path,var_list,date,condition_list,threshold_list,view_all = True,top = 30):
+def stock_screener_filter_condition(conn_path,var_list,date,condition_list,threshold_list,industry='None',view_all = True,top = 30):
     
     """  
-    select stocks which meet the creteria for user input stock factors
+    select stocks which meet the criteria for user input stock factors
     
-    The creteria should only be some filter conditions for value of factor
+    The criteria should only be some filter conditions for value of factor
     
     e.g. user choose to select the stock which santisfies the net_profit>=100000;
     
@@ -199,7 +210,7 @@ def stock_screener_filter_condition(conn_path,var_list,date,condition_list,thres
     db : pandas dataframe
         The dataframe for queried stock information
     """       
-    conn = sql.connect(conn_path)
+    conn = sql.connect(conn_path+'/data.db')          
     freq,table_name = table_lookup(conn,var_list[0])
     date = date_freq_transfer(date,freq)
     db = get_data(conn,var_list[0],date,table_name,condition = condition_list[0],threshold = threshold_list[0])
@@ -213,14 +224,23 @@ def stock_screener_filter_condition(conn_path,var_list,date,condition_list,thres
         db = db.merge(pd.DataFrame(temp[['Code',var_list[n]]]),how = 'inner',left_on = 'Code',right_on = 'Code')
         n = n + 1
     if(db.empty):
-        raise ValueError('No Stock meets creteria!')
+        raise ValueError('No Stock meets criteria!')
+    industry_table = pd.read_excel(conn_path+'/Industry.xlsx',dtype=str)
+    db = pd.merge(db,industry_table,how = 'left',left_on = 'Code',right_on='Code')
+    if industry == 'None':
+        db = db
+    else:
+        if isinstance(industry,str):
+            db = db[db['Industry']==(industry)]
+        else:
+            db = db[db['Industry'].isin(industry)]
     if(view_all):
         return db
     else:
         db = db.iloc[range(min(top,len(db))),:]
         return db
 
-def stock_screener_filter_top(conn_path,var_list,date,order,top):
+def stock_screener_filter_top(conn_path,var_list,date,order,top,industry='None',since_ipo = {'condition': '>=', 't': 2},in_universe = False):
     """  
     select several stocks which meet the creteria for user input stock factors
     
@@ -251,21 +271,31 @@ def stock_screener_filter_top(conn_path,var_list,date,order,top):
     db : pandas dataframe
         The dataframe for queried stock information
     """      
-    
-    conn = sql.connect(conn_path)
-    db = select_top(conn,var_list[0],date,top[0],order[0])
+    if in_universe == True:
+        industry2 = 'None'
+    else:
+        industry2 = industry
+    db = select_top(conn_path,var_list[0],date,industry = industry2,top = top[0],order = order[0])
     n = 1
     while(n<len(var_list)):
-        temp = select_top(conn,var_list[n],date,top=top[n],order = order[n])
-        db = db.merge(pd.DataFrame(temp[['Code',var_list[n]]]),how = 'inner',left_on = 'Code',right_on = 'Code')
+        temp = select_top(conn_path,var_list[n],date,industry = industry2,top=top[n],order = order[n])
+        db = db.merge(pd.DataFrame(temp.iloc[:,[0,2,4]]),how = 'inner',left_on = 'Code',right_on = 'Code')
         n = n + 1
+    
+    if industry == 'None':
+        db = db
+    else:
+        if isinstance(industry,str):
+            db = db[db['Industry']==(industry)]
+        else:
+            db = db[db['Industry'].isin(industry)]
     if(db.empty):
-        raise ValueError('No Stock meets creteria!')
+        raise ValueError('No Stock meets criteria!')
     return db
 
 
 
-def stock_screener_ranking(conn_path,var_list,date,rank_by,top=50,order='ascending'):
+def stock_screener_ranking(conn_path,var_list,date,rank_by,industry='None',since_ipo = {'condition': '>=', 't': 2},in_universe=False,top=50,order='ascending'):
     
     """  
     select stocks as well as user input stock factors with rank on one primary factor
@@ -298,11 +328,14 @@ def stock_screener_ranking(conn_path,var_list,date,rank_by,top=50,order='ascendi
     db : pandas dataframe
         The dataframe for queried stock information
     """    
-    
-    conn = sql.connect(conn_path)
+    if in_universe == True:
+        industry2 = 'None'
+    else:
+        industry2 = industry
+    conn = sql.connect(conn_path+'/data.db')          
     var_list.remove(rank_by)
     var_list.insert(0,rank_by)
-    db = select_top(conn,var_list[0],date,top,order = order)
+    db = select_top(conn_path,var_list[0],date,industry = industry2,top=top,order = order)
     n = 1
     while(n<len(var_list)):
         freq,table_name = table_lookup(conn,var_list[n])
@@ -311,8 +344,12 @@ def stock_screener_ranking(conn_path,var_list,date,rank_by,top=50,order='ascendi
         temp = (temp.drop_duplicates())
         db = db.merge(pd.DataFrame(temp[['Code',var_list[n]]]),how = 'left',left_on = 'Code',right_on = 'Code')
         n = n + 1
+    if industry == 'None':
+        db = db
+    else:
+        db = db[db['Industry'].isin(list(industry))]
     if(db.empty):
-        raise ValueError('No Stock meets creteria!')
+        raise ValueError('No Stock meets criteria!')
     return db
 
 
@@ -357,7 +394,7 @@ def print_data(conn_path,db):
         the database which needs to be printed
     """      
     
-    conn = sql.connect(conn_path)
+    conn = sql.connect(conn_path+'/data.db')          
     db_date = get_report_date(conn,list(db.Code),pd.unique(db.Time)[0])
     db_date.columns = ['Code','Name','Report Release Date']
     db = db_date.merge(db,how = 'left',left_on = 'Code',right_on = 'Code')

@@ -81,7 +81,7 @@ def get_annulized_alpha(asset, market, annualization, riskfree=0.0):
         return np.nan
     if len(asset) <= 1:
         return np.nan
-    beta = get_beta(market, asset, riskfree)
+    beta = get_beta( asset,market, riskfree)
     alpha = np.mean((asset - riskfree) - beta * (market - riskfree))
     return round(alpha * annualization, 4)
 
@@ -146,8 +146,8 @@ def get_rsquare(asset, market, riskfree=0.0):
         return np.nan
     if len(asset) <= 1:
         return np.nan
-    y = market - riskfree
-    x = asset - riskfree
+    x = market - riskfree
+    y = asset - riskfree
     x = sm.add_constant(x)
     fit = sm.OLS(y, x).fit()
     # ddof is applied to get unbiased estimator of std deviation
@@ -180,8 +180,8 @@ def get_adj_rsquare(asset, market, riskfree=0.0):
         return np.nan
     if len(asset) <= 1:
         return np.nan
-    y = market - riskfree
-    x = asset - riskfree
+    x = market - riskfree
+    y = asset - riskfree
     x = sm.add_constant(x)
     fit = sm.OLS(y, x).fit()
     # ddof is applied to get unbiased estimator of std deviation

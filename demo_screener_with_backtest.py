@@ -18,33 +18,32 @@ import general_tools as tool
 # In[2]:
 
 
-conn_path='/Users/zifandeng/Nustore Files/PI/data/data.db'
+conn_path='/Users/zifandeng/Nustore Files/PI/data/'
 date = '2015-10-31'
 
 
 # In[3]:
 
 
-stock_list = sc.stock_screener_filter_top(conn_path,date=date,var_list=['net_profit_ratio','roe','eps'],top=[70,100,100],
-                             order=['ascending','ascending','ascending'])
+stock_list = sc.stock_screener_filter_top(conn_path = conn_path,date=date,var_list=['net_profit_ratio','roe','eps'],top=[70,20,100],
+                             order=['ascending','ascending','ascending'],industry = ['机械','传媒','金融'],in_universe = False)
 sc.print_data(conn_path,stock_list)
 
 
 # In[17]:
 
 
-#stock_list = sc.stock_screener_filter_condition(conn_path,date=date,var_list=['net_profit_ratio','roe','eps'],
-#                                                threshold_list= [50,20,0],
-#                                                condition_list=['>=','>=','>='])
-#sc.print_data(conn_path,stock_list)
+stock_list = sc.stock_screener_filter_condition(conn_path,date=date,var_list=['net_profit_ratio','roe','eps'],
+                                                threshold_list= [50,20,0],
+                                                condition_list=['>=','>=','>='],industry = ['传媒'])
+sc.print_data(conn_path,stock_list)
 
 
 # In[18]:
 
 
-#stock_list = sc.stock_screener_ranking(conn_path,date=date,var_list=['net_profit_ratio','roe','eps'],
-#                                               rank_by = 'roe',order = 'ascending',top=10)
-#sc.print_data(conn_path,stock_list)
+stock_list=sc.stock_screener_ranking(conn_path=conn_path,date=date,var_list=['net_profit_ratio','roe','eps'],rank_by = 'roe',order = 'decending',top=10,in_universe=False,industry='机械')
+sc.print_data(conn_path,stock_list)
 
 
 # In[4]:
