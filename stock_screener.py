@@ -99,7 +99,6 @@ def get_data(conn,var,date,table_name,order='ascending',condition ='None',thresh
     db : pandas dataframe
         The dataframe for queried stock information
     """    
-    
     c = conn.cursor()
     c.execute("pragma table_info('"+table_name+"')")
     data_info = pd.DataFrame(c.fetchall())
@@ -125,7 +124,7 @@ def get_data(conn,var,date,table_name,order='ascending',condition ='None',thresh
     else:
         return np.nan
 
-def select_top(conn_path,var,date,industry = 'None',since_ipo = {'condition': '>=', 't': 0},top = 30,order='ascending'):
+def select_top(conn_path,var,date,industry = 'None',since_ipo = {'min': 0, 'max': 30},top = 30,order='ascending'):
        
     """ 
     select the first/last several stocks for user input stock factor
@@ -151,7 +150,7 @@ def select_top(conn_path,var,date,industry = 'None',since_ipo = {'condition': '>
     -------
     db : pandas dataframe
         The dataframe for queried stock information
-    """  
+    """
     conn = sql.connect(conn_path+'/data.db')          
     freq,table_name = table_lookup(conn,var)
     date = date_freq_transfer(date,freq)
@@ -159,19 +158,31 @@ def select_top(conn_path,var,date,industry = 'None',since_ipo = {'condition': '>
     db = (db.drop_duplicates())
     industry_table = pd.read_excel(conn_path+'/Industry.xlsx',dtype=str)
     db = pd.merge(db,industry_table,how = 'left',left_on = 'Code',right_on='Code')    
+    ipo_date = pd.read_sql('select code as Code,timeToMarket from stock_basics',conn)
+    ipo_date['timeToMarket']=list(map(int,ipo_date['timeToMarket']))
+    ipo_date['timeToMarket']=list(map(str,ipo_date['timeToMarket']))
+    ipo_date['timeToMarket'] = pd.to_datetime(ipo_date['timeToMarket'])
+    ipo_date['duration'] = pd.to_datetime(date) - ipo_date['timeToMarket']
+    db = pd.merge(db,ipo_date,left_on = 'Code',right_on = 'Code',how = 'left')
+    db = db[eval("(db['duration']>="+"pd.to_timedelta(365*since_ipo["+"'min'],'d'))&(db['duration']<="+"pd.to_timedelta(365*since_ipo["+"'max'],'d'))")]
+    db = db[db['duration']>=pd.to_timedelta(0)]
     if industry == 'None':
         db = db.iloc[range(min(top,len(db)))]
-        db[var+' rank in universe'] = range(1,len(db)+1)
+        #db[var+' rank(universe)'] = range(1,len(db)+1)
+        #db = db[['Code','Time','Industry','timeToMarket','duration',var,var+' rank(universe)']]
+        db = db[['Code','Time','Industry','timeToMarket','duration',var]]
     else:
         if isinstance(industry,str):
             db = db[db['Industry']==(industry)]
         else:
-            db = db[db['Industry'].isin(industry)] 
+            db = db[db['Industry'].isin(industry)]
         db = db.iloc[range(min(top,len(db)))]
-        db[var+' rank in selected industries'] = range(1,len(db)+1)
+        #db[var+' rank(selected)'] = range(1,len(db)+1)
+        #db = db[['Code','Time','Industry','timeToMarket','duration',var,var+' rank(selected)']]
+        db = db[['Code','Time','Industry','timeToMarket','duration',var]]
     return db
 
-def stock_screener_filter_condition(conn_path,var_list,date,condition_list,threshold_list,industry='None',view_all = True,top = 30):
+def stock_screener_filter_condition(conn_path,var_list,date,condition_list,threshold_list,industry='None',since_ipo = {'min': 0, 'max': 30},view_all = True,top = 30):
     
     """  
     select stocks which meet the criteria for user input stock factors
@@ -209,24 +220,36 @@ def stock_screener_filter_condition(conn_path,var_list,date,condition_list,thres
     -------
     db : pandas dataframe
         The dataframe for queried stock information
-    """       
+    """ 
+    var_mapping= pd.read_excel(conn_path+'value_mapping.xlsx')
+    var2 = var_mapping[var_mapping['Chinese'].isin(var_list)]
+    var2 = (var2.iloc[:,0])      
     conn = sql.connect(conn_path+'/data.db')          
-    freq,table_name = table_lookup(conn,var_list[0])
+    freq,table_name = table_lookup(conn,var2.iloc[0])
     date = date_freq_transfer(date,freq)
-    db = get_data(conn,var_list[0],date,table_name,condition = condition_list[0],threshold = threshold_list[0])
+    db = get_data(conn,var2.iloc[0],date,table_name,condition = condition_list[0],threshold = threshold_list[0])
     db = (db.drop_duplicates())
     n = 1
     while(n<len(var_list)):
-        freq,table_name = table_lookup(conn,var_list[n])
+        freq,table_name = table_lookup(conn,var2.iloc[n])
         date = date_freq_transfer(date,freq)
-        temp = get_data(conn,var_list[n],date,table_name,condition = condition_list[n],threshold = threshold_list[n])
+        temp = get_data(conn,var2.iloc[n],date,table_name,condition = condition_list[n],threshold = threshold_list[n])
         temp = (temp.drop_duplicates())
-        db = db.merge(pd.DataFrame(temp[['Code',var_list[n]]]),how = 'inner',left_on = 'Code',right_on = 'Code')
+        db = db.merge(pd.DataFrame(temp[['Code',var2.iloc[n]]]),how = 'inner',left_on = 'Code',right_on = 'Code')
         n = n + 1
     if(db.empty):
         raise ValueError('No Stock meets criteria!')
     industry_table = pd.read_excel(conn_path+'/Industry.xlsx',dtype=str)
     db = pd.merge(db,industry_table,how = 'left',left_on = 'Code',right_on='Code')
+    ipo_date = pd.read_sql('select code as Code,timeToMarket from stock_basics',conn)
+    ipo_date['timeToMarket']=list(map(int,ipo_date['timeToMarket']))
+    ipo_date['timeToMarket']=list(map(str,ipo_date['timeToMarket']))
+    ipo_date['timeToMarket'] = pd.to_datetime(ipo_date['timeToMarket'])
+    ipo_date['duration'] = pd.to_datetime(date) - ipo_date['timeToMarket']
+    db = pd.merge(db,ipo_date,left_on = 'Code',right_on = 'Code',how = 'left')
+    
+    db = db[eval("(db['duration']>="+"pd.to_timedelta(365*since_ipo["+"'min'],'d'))&(db['duration']<="+"pd.to_timedelta(365*since_ipo["+"'max'],'d'))")]
+    db = db[db['duration']>=pd.to_timedelta(0)]
     if industry == 'None':
         db = db
     else:
@@ -234,13 +257,15 @@ def stock_screener_filter_condition(conn_path,var_list,date,condition_list,thres
             db = db[db['Industry']==(industry)]
         else:
             db = db[db['Industry'].isin(industry)]
+    if(db.empty):
+        raise ValueError('No Stock meets criteria!')
     if(view_all):
         return db
     else:
         db = db.iloc[range(min(top,len(db))),:]
         return db
 
-def stock_screener_filter_top(conn_path,var_list,date,order,top,industry='None',since_ipo = {'condition': '>=', 't': 2},in_universe = False):
+def stock_screener_filter_top(conn_path,var_list,date,order,top,industry='None',since_ipo = {'condition': '>=', 't': 0},in_universe = False):
     """  
     select several stocks which meet the creteria for user input stock factors
     
@@ -270,18 +295,22 @@ def stock_screener_filter_top(conn_path,var_list,date,order,top,industry='None',
     -------
     db : pandas dataframe
         The dataframe for queried stock information
-    """      
+    """
+    var_mapping= pd.read_excel(conn_path+'value_mapping.xlsx')
+    var2 = var_mapping[var_mapping['Chinese'].isin(var_list)]
+    var2 = (var2.iloc[:,0])       
     if in_universe == True:
         industry2 = 'None'
+        since_ipo['min'] = 0
+        since_ipo['max'] = 30
     else:
         industry2 = industry
-    db = select_top(conn_path,var_list[0],date,industry = industry2,top = top[0],order = order[0])
+    db = select_top(conn_path,var2.iloc[0],date,industry = industry2,since_ipo = since_ipo,top = top[0],order = order[0])
     n = 1
     while(n<len(var_list)):
-        temp = select_top(conn_path,var_list[n],date,industry = industry2,top=top[n],order = order[n])
-        db = db.merge(pd.DataFrame(temp.iloc[:,[0,2,4]]),how = 'inner',left_on = 'Code',right_on = 'Code')
+        temp = select_top(conn_path,var2.iloc[0],date,industry = industry2,since_ipo = since_ipo,top=top[n],order = order[n])
+        db = db.merge(pd.DataFrame(temp.iloc[:,[0,5,6]]),how = 'inner',left_on = 'Code',right_on = 'Code')
         n = n + 1
-    
     if industry == 'None':
         db = db
     else:
@@ -327,22 +356,27 @@ def stock_screener_ranking(conn_path,var_list,date,rank_by,industry='None',since
     -------
     db : pandas dataframe
         The dataframe for queried stock information
-    """    
+    """  
     if in_universe == True:
         industry2 = 'None'
+        since_ipo['min'] = 0
+        since_ipo['max'] = 30
     else:
         industry2 = industry
     conn = sql.connect(conn_path+'/data.db')          
     var_list.remove(rank_by)
     var_list.insert(0,rank_by)
-    db = select_top(conn_path,var_list[0],date,industry = industry2,top=top,order = order)
+    var_mapping= pd.read_excel(conn_path+'value_mapping.xlsx')
+    var2 = var_mapping[var_mapping['Chinese'].isin(var_list)]
+    var2 = (var2.iloc[:,0]) 
+    db = select_top(conn_path,var2.iloc[0],date,industry = industry2,since_ipo = since_ipo,top=top,order = order)
     n = 1
     while(n<len(var_list)):
-        freq,table_name = table_lookup(conn,var_list[n])
+        freq,table_name = table_lookup(conn,var2.iloc[n])
         date = date_freq_transfer(date,freq)
-        temp = get_data(conn,var_list[n],date,table_name)
+        temp = get_data(conn,var2.iloc[n],date,table_name)
         temp = (temp.drop_duplicates())
-        db = db.merge(pd.DataFrame(temp[['Code',var_list[n]]]),how = 'left',left_on = 'Code',right_on = 'Code')
+        db = db.merge(pd.DataFrame(temp[['Code',var2.iloc[n]]]),how = 'left',left_on = 'Code',right_on = 'Code')
         n = n + 1
     if industry == 'None':
         db = db
@@ -393,9 +427,19 @@ def print_data(conn_path,db):
     db : pandas dataframe
         the database which needs to be printed
     """      
-    
     conn = sql.connect(conn_path+'/data.db')          
+    var_mapping= pd.read_excel(conn_path+'value_mapping.xlsx')
     db_date = get_report_date(conn,list(db.Code),pd.unique(db.Time)[0])
     db_date.columns = ['Code','Name','Report Release Date']
     db = db_date.merge(db,how = 'left',left_on = 'Code',right_on = 'Code')
+    fixed_col = db.columns[db.columns.isin(['Code','Name','Time','Industry','timeToMarket'])]
+    fixed_chinese = pd.Index(['股票代码','股票名称','时间','所属行业','上市时间'])
+    dynamic_col = db.columns[~db.columns.isin(['Code','Name','Report Release Date','Time','Industry','timeToMarket', 'duration'])]   
+    dynamic_chinese = var_mapping[var_mapping['Var Name'].isin(dynamic_col)]['Chinese']
+    dynamic_chinese = pd.Index(dynamic_chinese)
+    col = fixed_col.append(dynamic_col)
+    db = db[col]
+    #db = db.sort_values(db.columns[8])
+    db.columns = fixed_chinese.append(dynamic_chinese)
     return db
+

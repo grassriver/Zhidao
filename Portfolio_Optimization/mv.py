@@ -6,6 +6,7 @@ Created on Sun Apr  1 17:28:20 2018
 """
 
 import numpy as np
+import pandas as pd
 import matplotlib.pyplot as plt
 import scipy.optimize as sco
 import scipy.interpolate as sci
@@ -15,7 +16,7 @@ import warnings
 #%%
 
 
-def statistics(weights, mu, sigma, rf=0.01):
+def statistics(weights, mu, sigma, rf=0.03):
     ''' 
     Returns portfolio statistics.
 
@@ -44,7 +45,7 @@ def statistics(weights, mu, sigma, rf=0.01):
     return np.array([pret, pvol, (pret - rf) / pvol])
 
 
-def min_func_sharpe(weights, mu, sigma, rf=0.01):
+def min_func_sharpe(weights, mu, sigma, rf=0.03):
     '''
     Return negative value of the Sharpe ratio.
     Parameters
@@ -75,12 +76,12 @@ def max_func_ret(weights, mu, sigma):
     '''
     return -statistics(weights, mu, sigma)[0]
 
-def max_quadratic(weights, mu, sigma, l):
+def max_quadratic(weights, mu, sigma, l, rf):
     '''
     return negative value of quadratic utility
     '''
     pret, pvol, _ = statistics(weights, mu, sigma)
-    return  - pret + (l/2)*(pvol**2)
+    return  - pret + l*(pvol**2) - (1-weights.sum())*rf
 
 def f(x, tck):
     ''' 
@@ -96,7 +97,7 @@ def df(x, tck):
     return sci.splev(x, tck, der=1)
 
 
-def equations(p, tck, rf=0.01):
+def equations(p, tck, rf=0.03):
     '''
     equation for the market portfolio and riskfree asset
 
@@ -133,7 +134,7 @@ def simulation(mu, sigma):
     return prets, pvols
 
 
-def opt_s_v(mu, sigma, rf=0.01):
+def opt_s_v(mu, sigma, rf=0.03):
     '''
     maximize sharpe ratio and minimize volatility
     '''
@@ -149,7 +150,7 @@ def opt_s_v(mu, sigma, rf=0.01):
                         bounds=bnds, constraints=cons)
     return opts, optv
 
-def opt_s(mu, sigma, rf=0.01):
+def opt_s(mu, sigma, rf=0.03):
     '''
     maximize sharpe ratio
     '''
@@ -162,7 +163,7 @@ def opt_s(mu, sigma, rf=0.01):
                         bounds=bnds, constraints=cons)
     return opts.x
 
-def opt_v(mu, sigma, rf=0.01):
+def opt_v(mu, sigma, rf=0.03):
     '''
     minimize volatility
     '''
@@ -200,7 +201,7 @@ def eff_fter(mu, sigma):
     return trets, tvols
 
 
-def cml_eff(mu, sigma, rf=0.01):
+def cml_eff(mu, sigma, rf=0.03):
     '''
     Solve the capital market line and interpolate the efficient frontier
     '''
@@ -216,7 +217,7 @@ def cml_eff(mu, sigma, rf=0.01):
     return opt, tck, evols, erets
 
 
-def tan_port(mu, sigma, rf=0.01):
+def tan_port(mu, sigma, rf=0.03):
     '''
     weights of tangent portfolio (according to the intersection point
     of efficient frontier and cml)
@@ -244,7 +245,7 @@ def tan_port(mu, sigma, rf=0.01):
     return optt
 
 
-def plot_eff_fter(mu, sigma, rf=0.01):
+def plot_eff_fter(mu, sigma, rf=0.03):
     '''
     Plot the efficient frontier and capital market line.
     '''
@@ -301,14 +302,14 @@ def hist_expect(conn, code_list, start='2016-01-01', end='2017-01-01',
     esigma = rets.cov() * 252
     return emu, esigma
 
-def max_sharpe(mu, sigma, rf=0.01):
+def max_sharpe(mu, sigma, rf=0.03):
     '''
     weights of portfolio that maximize sharpe ratio
     '''
     opts, _ = opt_s_v(mu, sigma, rf)
     return opts.x
 
-def min_vol(mu, sigma, rf=0.01):
+def min_vol(mu, sigma, rf=0.03):
     '''
     weights of GMV
     '''
@@ -357,7 +358,7 @@ def min_vol_st_ret(tret, mu, sigma):
                         bounds=bnds, constraints=cons)
     return opt.x
 
-def max_ret_st_vol_wrf(tvol, mu, sigma, rf=0.01):
+def max_ret_st_vol_wrf(tvol, mu, sigma, rf=0.03):
     '''
     maximize expected return subject to targeted volatility with risk free asset
     '''
@@ -369,9 +370,9 @@ def max_ret_st_vol_wrf(tvol, mu, sigma, rf=0.01):
     w = w_M * tvol / mvol
     return w
 
-def min_vol_st_ret_wrf(tret, mu, sigma, rf=0.01):
+def min_vol_st_ret_wrf(tret, mu, sigma, rf=0.03):
     '''
-    minimize expected volatility subject to targeted return without risk free asset
+    minimize expected volatility subject to targeted return with risk free asset
     '''
     if tret>np.max(mu) or tret<rf:
         raise ValueError('tret should be between {0} and {1}'.format(rf, np.max(mu)))
@@ -433,7 +434,7 @@ def min_vol_st_ret_resticted(tret, mu, sigma, w0):
         w = w/np.sum(w)
     return w
 
-def opt_s_restricted(mu, sigma, w0, rf=0.01, max_turnover=0.2):
+def opt_s_restricted(mu, sigma, w0, rf=0.03, max_turnover=0.2):
     '''
     maximize sharpe ration and minimize volatility
     '''
@@ -452,7 +453,7 @@ def opt_s_restricted(mu, sigma, w0, rf=0.01, max_turnover=0.2):
         w = w/np.sum(w)
     return w
 
-def opt_v_restricted(mu, sigma, w0, rf=0.01, max_turnover=0.2):
+def opt_v_restricted(mu, sigma, w0, rf=0.03, max_turnover=0.2):
     '''
     maximize sharpe ration and minimize volatility
     '''
@@ -481,15 +482,61 @@ def opt_quadratic(mu, sigma, l):
     init = noa * [1. / noa, ]  # initial weights: multiplication of a list returns replications of this list
 
     # get the corresponding portfolio on the efficient frontier
-    opt = sco.minimize(max_quadratic, init, args=(mu, sigma, l), method='SLSQP',
+    opt = sco.minimize(max_quadratic, init, args=(mu, sigma, l, 0), method='SLSQP',
+                        bounds=bnds, constraints=cons)
+    return opt.x
+
+def opt_quadratic_risky(mu, sigma, l, rf=0.03):
+    '''
+    maximize expected return subject to targeted volatility without risk free asset
+    '''
+    noa = len(mu)
+    cons = ({'type': 'ineq', 'fun': lambda x: - np.sum(x) + 1})  # constraints
+    bnds = tuple((0, 1) for x in range(noa))  # bounds for parameters
+    init = noa * [1. / noa, ]  # initial weights: multiplication of a list returns replications of this list
+
+    # get the corresponding portfolio on the efficient frontier
+    opt = sco.minimize(max_quadratic, init, args=(mu, sigma, l, rf), method='SLSQP',
+                        bounds=bnds, constraints=cons)
+    return opt.x
+
+def opt_quadratic_risky2(mu, sigma, l, rf=0.03):
+    '''
+    maximize expected return subject to targeted volatility without risk free asset
+    '''
+    noa = len(mu)
+    cons = ({'type': 'eq', 'fun': lambda x: - np.sum(x) + 1})  # constraints
+    bnds = tuple((0, 0.1) for x in range(noa))  # bounds for parameters
+    init = noa * [1. / noa, ]  # initial weights: multiplication of a list returns replications of this list
+
+    # get the corresponding portfolio on the efficient frontier
+    opt = sco.minimize(max_quadratic, init, args=(mu, sigma, l, rf), method='SLSQP',
+                        bounds=bnds, constraints=cons)
+    return opt.x
+
+def opt_quadratic_risky_restricted(mu, sigma, l, w0=None, rf=0.03, max_turnover=0.2):
+    '''
+    maximize expected return subject to targeted volatility without risk free asset
+    '''
+    noa = len(mu)
+    if w0 is None:
+        cons = ({'type': 'ineq', 'fun': lambda x: - np.sum(x) + 1})  # constraints
+    else:    
+        cons = ({'type': 'ineq', 'fun': lambda x: - np.sum(x) + 1},
+                {'type': 'ineq', 'fun': lambda x: max_turnover - np.max(np.abs(x-w0))})  # constraints
+    bnds = tuple((0, 1) for x in range(noa))  # bounds for parameters
+    init = noa * [1. / noa, ]  # initial weights: multiplication of a list returns replications of this list
+
+    # get the corresponding portfolio on the efficient frontier
+    opt = sco.minimize(max_quadratic, init, args=(mu, sigma, l, rf), method='SLSQP',
                         bounds=bnds, constraints=cons)
     return opt.x
 
 def hist_expect_mu(conn, code_list, start='2016-01-01', end='2017-01-01', 
                    backfill=False, stocks_price_old=None, business_calendar=None,
-                   industry=None):
+                   industry=None, **kwargs):
     '''
-    calculate expected return from historical return.
+    calculate annualized expected return from historical return.
 
     Returns
     =======
@@ -506,19 +553,32 @@ def hist_expect_mu(conn, code_list, start='2016-01-01', end='2017-01-01',
 
 def hist_expect_sigma(conn, code_list, start='2016-01-01', end='2017-01-01', 
                       backfill=False, stocks_price_old=None, business_calendar=None,
-                      industry=None):
+                      industry=None, **kwargs):
     '''
-    calculate covariance matrix from historical return.
+    calculate annualized covariance matrix from historical return.
 
     Returns
     =======
     esigma: pandas.DataFrame
         expected covariance matrix
     '''
-    s = Stock(conn, code_list, start, end, backfill=backfill, 
+    s = Stock(conn, code_list, start, end, backfill=False, 
               stocks_price_old=stocks_price_old,
               business_calendar=business_calendar,
               industry=industry)
     rets = s.daily_returns
+
     esigma = rets.cov() * 252
+    
+    # if not enough close price data, covariance should not be calculated
+    temp = (~pd.isnull(rets)).sum()
+    idx = (temp[temp<10].index).tolist()
+    if idx:
+        print(start)
+        print(end)
+        raise ValueError('Data less than 10 days for stocks {}!'.format(','.join(idx)))
+    # deal with 0 correlations
+    #    var = np.diag(esigma)
+    
     return esigma
+

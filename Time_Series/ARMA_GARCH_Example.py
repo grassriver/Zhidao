@@ -3,6 +3,8 @@
 """
 Created on Mon Mar 19 23:32:01 2018
 
+conda install -c bashtage arch
+
 @author: tianyulu
 """
 

@@ -62,3 +62,15 @@ opt_method  = method('opt_s', method=mv.opt_s,
 #==========opt_v====================
 opt_method  = method('opt_v', method=mv.opt_v, 
                     kwargs={'mu':mu, 'sigma':sigma})
+
+
+#==========sigma barra==============
+kwargs={'code_list':code_list,
+        'start':start,
+        'window':window,
+        'model_data':model_data,
+        'wls_resid':wls_resid,
+        'factor_list2':factor_list2,
+        'conn':data_path}
+sigma_barra = sigma_method('sigma_fm', FM_opt.barra_stk_cov, kwargs)
+

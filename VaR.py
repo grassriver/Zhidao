@@ -56,7 +56,7 @@ def ewma_var(select,cutoff=0.01,span_value=1.05):
     EWMA VaR : float
         EWMA VaR value.
     """
-    adj_returns=pd.ewma(select,span=span_value)
+    adj_returns=select.ewm(span=span_value).mean()
     return round(adj_returns.quantile(cutoff,interpolation='lower'),4)
     
   

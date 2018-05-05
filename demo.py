@@ -17,7 +17,7 @@ import os
 
 path = os.path.abspath('./')
 if path.split('\\')[-1] != 'Working_On':
-    raise ValueError('enter working on path!')
+    raise ValueError('enter Working_On path!')
 sys.path.append(path)
 dbpath = os.path.abspath('../../')+'\\Data\\data.db'
 conn = sql.connect(dbpath)
@@ -29,7 +29,7 @@ import Portfolio_Optimization.rolling as rolling
 import stock_screener as sc
 import general_tools as tool
 import CAPM.capm as capm
-from Portfolio_Optimization.methodclass import method
+from Portfolio_Optimization.methodclass import mu_method
 
 #%% Demo Stock Class
 code_list = ['000001', '000002']
@@ -263,7 +263,7 @@ kwargs={'conn': conn,
         'freq': 'daily'}
 #stk_prediction = capm.capm_mu(**kwargs)
 #params = {'name': 'capm', 'method': capm.capm_mu, 'kwargs': kwargs}
-mu_capm = method('capm', capm.capm_mu, kwargs)
+mu_capm = mu_method('capm', capm.capm_mu, kwargs)
 
 #==============rolling optimization=============================
 balance = rolling.rolling(conn, code_list, start, end, 

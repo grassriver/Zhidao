@@ -1,6 +1,8 @@
 __pycache__
-
 *.xlsx
 *.pkl
 *.csv
 *.db
+Factor model
+*.png
+*.xlsx

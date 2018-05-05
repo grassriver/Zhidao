@@ -194,6 +194,8 @@ def portfolio_construct_by_weight(conn, start, code_list, weights=None, name_lis
         weights = np.array(len(code_list)*[1/len(code_list)])
     else:
         weights = np.array(weights)
+    start = first_trading_day(conn, start, 
+                              business_calendar=business_calendar)
     stocks = Stock(conn, list(code_list), start=start, end=start, 
                    backfill=backfill,
                    stocks_price_old=stocks_price_old,
@@ -228,7 +230,7 @@ def get_business_calendar(conn, index='sh000001'):
     return business_calendar
 
 def get_industry(conn, code_list):
-    query = 'select code,name,industry_zx from stock_basics where code in ("%s")' % ('","'.join(code_list))
+    query = 'select code,name,industry from stock_basics where code in ("%s")' % ('","'.join(code_list))
     industry = pd.read_sql(query, conn)
     if industry.empty:
         industry = None

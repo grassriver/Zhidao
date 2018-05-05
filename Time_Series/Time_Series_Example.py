@@ -14,13 +14,13 @@ Created on 2018-03-13 19:14:30
 import pandas as pd
 import sqlite3 as sql
 import sys
-sys.path.append('/Users/tianyulu/Nustore Files/PI//code/working_on')
+sys.path.append('F:/Nut/PI/code/working_on')
 from stock_class import Stock
 from portfolio_class import Portfolio
 import matplotlib.pylab as plt
 import numpy as np
 import scipy.stats as st    
-conn = sql.connect('/Users/tianyulu/Nustore Files/PI/Staff Working File/D.Lu/data.db')
+conn = sql.connect('F:/Nut/PI/data/data.db')
 
 
 code_list = ['000001']

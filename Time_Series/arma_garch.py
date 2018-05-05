@@ -47,7 +47,7 @@ class ARMA_GARCH(object):
 
         residule_arma = results_arma.resid
 
-        print(results_arma.summary())
+     #   print(results_arma.summary())
         #res_arch.plot(annualize='D')
         p = self.garch_order[0]
         q = self.garch_order[1]
@@ -59,7 +59,7 @@ class ARMA_GARCH(object):
         self.arma_fitted = results_arma.fittedvalues
         self.garch_fitted = res_arch.conditional_volatility
         
-        print(res_arch.summary())
+     #   print(res_arch.summary())
         
     
     def prediction(self,n_period):
@@ -92,6 +92,7 @@ class ARMA_GARCH(object):
         x_pre = self.arma_fitted[-max(m,n):]
         s_pre = self.garch_fitted[-max(p,q):]
         
+        np.random.seed(100)
         z = np.random.normal(size=n_period+lag_max)
         x = np.ones((n_period+lag_max,))     
         s = np.ones((n_period+lag_max,))        
@@ -115,11 +116,11 @@ class ARMA_GARCH(object):
 #                          np.sum(theta*z[t-t_n-n:t-t_n]*s[t-t_n-n:t-t_n]) + z[t-lag_max]*s[t])        
 #       
         
-        plt.plot(x)
-        plt.show()
+       # plt.plot(x)
+      #  plt.show()
         
-        self.prediction_x = x[m:]
-        self.prediction_conditional_vol = s[1:]
+        self.prediction_x = x[lag_max:]
+        self.prediction_conditional_vol = s[lag_max:]
         
         
         
