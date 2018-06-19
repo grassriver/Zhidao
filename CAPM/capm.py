@@ -26,21 +26,38 @@ def get_date_range(conn,t,window,frequency,method = 'backward'):
         raise ValueError('date '+t+' is not a business day!')
     # check frequency
     if frequency == 'annually':
-        date_range = rolling_bus_day(conn,window,t,pd.offsets.relativedelta(years=1),method)
+        date_range = rolling_bus_day(window,t,pd.offsets.relativedelta(years=1),method)
     elif frequency == 'quarterly':
-        date_range = rolling_bus_day(conn,window,t,pd.offsets.relativedelta(months=3),method)
+        date_range = rolling_bus_day(window,t,pd.offsets.relativedelta(months=3),method)
     elif frequency == 'monthly':
-        date_range = rolling_bus_day(conn,window,t,pd.offsets.relativedelta(months=1),method)
+        date_range = rolling_bus_day(window,t,pd.offsets.relativedelta(months=1),method)
     elif frequency == 'weekly':
-        date_range = rolling_bus_day(conn,window,t,pd.offsets.relativedelta(weeks=1),method)
+        date_range = rolling_bus_day(window,t,pd.offsets.relativedelta(weeks=1),method)
     elif frequency == 'daily':
-        date_range = rolling_bus_day(conn,window,t,pd.offsets.relativedelta(days=1),method)
+        bday_offset = lambda n: pd.offsets.CustomBusinessDay(n, calendar=bus_calender)
+        date_range = rolling_bus_day(window,t,bday_offset(1),method)
     else:
         raise ValueError('Please enter a valid frequency!')
     return date_range
 
+def convert_return(data,frequency):
+    if frequency == 'annually':
+        data2 =  data.resample('A',kind='period').sum()
+    elif frequency == 'quarterly':
+        data2 =  data.resample('Q',kind='period').sum()
+    elif frequency == 'monthly':
+        data2 =  data.resample('M',kind='period').sum()
+    elif frequency == 'weekly':
+        data2 =  data.resample('W',kind='period').sum()
+    elif frequency == 'daily':
+        data2 = data
+    else:
+        raise ValueError('Please enter a valid frequency!')
+    return data2
+
 def get_mkt_index(conn,t,window,frequency,index_code):
-    date_range = get_date_range(conn,t,window,frequency)
+    converter = {'daily':1,'weekly':5,'monthly':21,'quarterly':63,'annually':252}
+    date_range = get_date_range(conn,t,window*converter[frequency],'daily')
     begin = date_range[0]
     mkt = pd.read_sql("select date,close,code from index_price where date >='"+begin.strftime('%Y-%m-%d')+"' and date <='" +t+"'"+' and code="%s"' % (index_code),conn)
     mkt = mkt.sort_values(by = 'date')
@@ -48,9 +65,10 @@ def get_mkt_index(conn,t,window,frequency,index_code):
     mkt = mkt.set_index('date')
     mkt['mkt_ret'] = np.log(mkt['close'])-np.log(mkt['close'].shift(1))
     mkt = mkt.dropna()
-    for i in range(1,len(date_range)):
-        mkt.loc[(mkt.index>date_range[i-1]) & (mkt.index<=date_range[i]),'group']=date_range[i]        
-    mkt2 = pd.DataFrame(mkt.groupby('group')['mkt_ret'].sum())
+    mkt2 = convert_return(mkt,frequency)
+   # for i in range(1,len(date_range)):
+   #     mkt.loc[(mkt.index>date_range[i-1]) & (mkt.index<=date_range[i]),'group']=date_range[i]        
+   # mkt2 = pd.DataFrame(mkt.groupby('group')['mkt_ret'].sum())
     return mkt2
 
 def get_coef(stk,mkt,riskfree,code):
@@ -75,10 +93,7 @@ def get_coef(stk,mkt,riskfree,code):
     return code,begin,end,n,alpha,beta,r2
 
 
-def rolling_bus_day(conn,window,t,d_offsets,method):
-    bus_calender = tool.get_business_calendar(conn)
-    if(bus_calender[bus_calender['date']==t].empty):
-        raise ValueError('date '+t+' is not a business day!')
+def rolling_bus_day(window,t,d_offsets,method):
     date_range=[]
     date_temp3 = pd.to_datetime(t)
     date_range.append(t)
@@ -94,7 +109,7 @@ def rolling_bus_day(conn,window,t,d_offsets,method):
     date_range = pd.to_datetime(date_range).sort_values()
     return date_range
 
-def capm_modeling(conn,t,frequency,window,stk_list = None,riskfree=0.0,mkt_code = 'sh000300',
+def capm_modeling(conn,t,frequency,window,stk_list = None,riskfree=0.0,mkt_code = 'sh000001',
                   stocks_price_old=None, business_calendar=None, industry=None):
     
     """
@@ -130,11 +145,12 @@ def capm_modeling(conn,t,frequency,window,stk_list = None,riskfree=0.0,mkt_code 
         [code, available beginning date, end date, number of observation, alpha, beta, r_squared] 
     """  
     # Get Business Calender to check if selected date is business day
+    converter = {'daily':1,'weekly':5,'monthly':21,'quarterly':63,'annually':252}
     since = time.time()
     bus_calender = tool.get_business_calendar(conn)
     if(bus_calender[bus_calender['date']==t].empty):
         raise ValueError('date '+t+' is not a business day!')
-    date_range = get_date_range(conn,t,window,frequency)
+    date_range = get_date_range(conn,t,window*converter[frequency],'daily')
     begin = date_range[0]
     if stk_list == None:
         stk_list = tool.get_stock_pool(conn,t)
@@ -155,13 +171,16 @@ def capm_modeling(conn,t,frequency,window,stk_list = None,riskfree=0.0,mkt_code 
             index_end = np.minimum(index+500,(stk_list.index[~0]+1))
             data = pd.merge(data,Stock(conn,list(stk_list['code'][index:index_end]),begin.strftime('%Y-%m-%d'),t).daily_returns,how = 'outer',left_index = True,right_index =True)
             index=index_end
+            
     # get the time period before and including t
     mkt = get_mkt_index(conn,t,window,frequency,mkt_code)[['mkt_ret']] 
     # Extract all stocks as of time t
-    for i in range(1,len(date_range)):
-        data.loc[(data.index>date_range[i-1]) & (data.index<=date_range[i]),'group']=date_range[i]             
-    data2 = pd.DataFrame(data.groupby('group').agg(lambda x:x.sum(skipna = False)))
-    # Calculate coeficients    
+#    for i in range(1,len(date_range)):
+#        data.loc[(data.index>date_range[i-1]) & (data.index<=date_range[i]),'group']=date_range[i]             
+#    data2 = pd.DataFrame(data.groupby('group').agg(lambda x:x.sum(skipna = False)))
+#    data2 = data2.sort_index()
+    # Calculate coeficients
+    data2 = convert_return(data,frequency)
     results = (map(functools.partial(get_coef,data2,mkt,riskfree),stk_list['code']))
     model_coef = list(results)
     time_lag = time.time()-since        
@@ -180,6 +199,8 @@ def capm_modeling(conn,t,frequency,window,stk_list = None,riskfree=0.0,mkt_code 
     industry_avg_alpha.columns = ['industry_avg_alpha']
     model_coef = pd.merge(model_coef,industry_avg_beta,left_on = 'industry',right_index = True,how = 'left')
     model_coef = pd.merge(model_coef,industry_avg_alpha,left_on = 'industry',right_index = True,how = 'left')
+    model_coef.loc[model_coef['number of obs']<np.ceil(window*0.2),'beta'] = model_coef[model_coef['number of obs']<np.ceil(window*0.2)]['industry_avg_beta']
+    model_coef.loc[model_coef['number of obs']<np.ceil(window*0.2),'alpha'] = model_coef[model_coef['number of obs']<np.ceil(window*0.2)]['industry_avg_alpha']
     return model_coef
 
 def mkt_forecasting(conn,t,frequency,lookback_window,proj_period,method,mkt_code = 'sh000300',n_periods=15,annualization = 252,arma_order=[2,0,0],garch_order=[1,1]):
@@ -220,7 +241,7 @@ def mkt_forecasting(conn,t,frequency,lookback_window,proj_period,method,mkt_code
             else:
                 warnings.warn('No autoregression effect detected by Ljung Box test. Use GARCH only!')
                 model =  arch.arch_model(mkt['mkt_ret'],p=1,q=1).fit()
-                mkt_pre = np.array(model.forecast(horizon = proj_period).mean.tail(1))
+                mkt_pre = np.transpose(np.array(model.forecast(horizon = proj_period).mean.tail(1)))
         # If neither exists, using historical mean instead
         elif (ar_effect == True):
             mkt_pre = model_arma.forecast(proj_period)[0] 

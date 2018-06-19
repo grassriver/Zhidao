@@ -500,6 +500,20 @@ def opt_quadratic_risky(mu, sigma, l, rf=0.03):
                         bounds=bnds, constraints=cons)
     return opt.x
 
+def opt_quadratic_risky1(mu, sigma, l, rf=0.03):
+    '''
+    maximize expected return subject to targeted volatility without risk free asset
+    '''
+    noa = len(mu)
+    cons = ({'type': 'ineq', 'fun': lambda x: - np.sum(x) + 1})  # constraints
+    bnds = tuple((0, 0.1) for x in range(noa))  # bounds for parameters
+    init = noa * [1. / noa, ]  # initial weights: multiplication of a list returns replications of this list
+
+    # get the corresponding portfolio on the efficient frontier
+    opt = sco.minimize(max_quadratic, init, args=(mu, sigma, l, rf), method='SLSQP',
+                        bounds=bnds, constraints=cons)
+    return opt.x
+
 def opt_quadratic_risky2(mu, sigma, l, rf=0.03):
     '''
     maximize expected return subject to targeted volatility without risk free asset
@@ -581,4 +595,15 @@ def hist_expect_sigma(conn, code_list, start='2016-01-01', end='2017-01-01',
     #    var = np.diag(esigma)
     
     return esigma
+
+#def residual_alpha(conn, code_list, start='2016-01-01', end='2017-01-01', 
+#                   backfill=False, stocks_price_old=None, business_calendar=None):
+#    rets = hist_expect_mu(conn, code_list, start, end, 
+#                          backfill=backfill, 
+#                          stocks_price_old=stocks_price_old, 
+#                          business_calendar=business_calendar, 
+#                          industry=industry)
+#    beta = get beta
+#    residual = rets - beta*rm
+#    return residual
 

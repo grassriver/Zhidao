@@ -21,6 +21,8 @@ import sqlite3 as sql
 #import functools
 #import time
 from numpy.linalg import LinAlgError
+import warnings
+import utils
 
 import sys
 import os
@@ -196,6 +198,12 @@ def forecast_ret_cov1(feed, BetaCov,code_list,factor_list):
 
 #PreRetCov = forecast_ret_cov1(factor_feed, PreBetaCov,code_list,factor_list2)
 
+def res_var(res):
+    if res.count() >= 25:
+        return res.sum()/(res.count()-1)
+    else:
+        return np.nan
+
 def forecast_ret_cov2(code_list, feed,wls_beta_used, wls_resid_used, factor_list,f_day=1):
     
     '''
@@ -218,7 +226,10 @@ def forecast_ret_cov2(code_list, feed,wls_beta_used, wls_resid_used, factor_list
 
     #resid_var_in =wls_resid.loc[(wls_resid['code'].isin(code_list))&(wls_resid['date']>=start_date)]
     
-    resid_var=pd.DataFrame({'resid_var':wls_resid_used.groupby('code')['wls_resid2'].apply(lambda x: x.sum()/(x.count()-1))})
+    
+    
+    resid_var=pd.DataFrame({'resid_var':wls_resid_used.groupby('code')['wls_resid2'].apply(res_var)})
+    resid_var['resid_var']=resid_var['resid_var'].transform(lambda x:x.fillna(x.median()) )
 
     resid_var = resid_var.reset_index()    
     
@@ -286,11 +297,11 @@ def load_data(conn):
 
     
        
-def barra_stk_cov(code_list, start, window, model_data, wls_resid, factor_list2, conn, **kwargs):
+def barra_stk_cov(code_list, start, window, model_data, wls_resid, factor_list2, data_path, **kwargs):
 
     # generate data used for modeling
     [factor_feed,wls_beta_used,wls_resid_used]=generate_feed(code_list, start, 
-                                            window, model_data, wls_resid, conn)
+                                            window, model_data, wls_resid, data_path)
     
 #    time_series_stationarity(wls_beta_used, factor_list2)  
 
@@ -298,12 +309,15 @@ def barra_stk_cov(code_list, start, window, model_data, wls_resid, factor_list2,
                                   wls_resid_used, factor_list2,f_day=1)
     PreRetCov = PreRetCov.iloc[:,0:-1]
 
-    return PreRetCov
+    return PreRetCov*252
 
 def generate_feed_all(anchor_date, window, model_data, wls_resid, conn):
+    
+    wls_resid_used = wls_resid[(wls_resid['date']<anchor_date)]
         
     code_list = list(set(wls_resid['code'].unique()) &
-                     set(model_data.loc[model_data.date==anchor_date, 'code'].unique()))
+                     set(model_data.loc[model_data.date==anchor_date, 'code'].unique()) &
+                     set(wls_resid_used.code.unique()))
     
     model_data_in = model_data.loc[(model_data['code'].isin(code_list))]
     
@@ -312,8 +326,8 @@ def generate_feed_all(anchor_date, window, model_data, wls_resid, conn):
 #        raise ValueError('factor value not available for %s'%list(set(code_list) - set(model_data.code.unique())))
 
 
-    wls_resid_used = wls_resid[(wls_resid['date']<anchor_date)&
-                               (wls_resid['code'].isin(code_list))]
+#    wls_resid_used = wls_resid[(wls_resid['date']<anchor_date)&
+#                               (wls_resid['code'].isin(code_list))]
     
 #    if len(wls_resid_used.code.unique()) < len(code_list):
 #       
@@ -337,15 +351,15 @@ def generate_feed_all(anchor_date, window, model_data, wls_resid, conn):
     return factor_feed, wls_beta_used, wls_resid_used, code_list
 
 
-def barra_stk_cov_all(start, window, model_data, wls_resid, factor_list2, conn, **kwargs):
+def barra_stk_cov_all(start, window, model_data, wls_resid, factor_list2, data_path, **kwargs):
 
     # generate data used for modeling
     [factor_feed,wls_beta_used,wls_resid_used, code_list]=generate_feed_all(start, 
-                                            window, model_data, wls_resid, conn)
+                                            window, model_data, wls_resid, data_path)
 
     PreRetCov = forecast_ret_cov2(code_list, factor_feed,wls_beta_used, 
                                   wls_resid_used, factor_list2,f_day=1)
-    PreRetCov = PreRetCov.iloc[:,0:-1]
+#    PreRetCov = PreRetCov.iloc[:,0:-1]
 
     return PreRetCov
 
@@ -368,14 +382,16 @@ def barra_stk_cov_all(start, window, model_data, wls_resid, factor_list2, conn, 
 #
 #    return PreRetCov
 
-def barra_reverse_mu_all(start, window, model_data, wls_resid, factor_list2, data_path, dbpath, **kwargs):
+def barra_reverse_mu_all(start, window, model_data, wls_resid, factor_list2, data_path, conn, **kwargs):
     
     sigma = barra_stk_cov_all(start, window, model_data, wls_resid, factor_list2, data_path)
     code_list_all = sigma.code.tolist()
-    sigma = sigma.set_index('code').sort_index()
+    sigma = sigma.set_index('code')
+    if not utils.check_symmetric(sigma):
+        raise ValueError('sigma matrix is not symmetric')
+    
 #    sigma_all = np.matrix(sigma)
     
-    conn = sql.connect(dbpath)
     query1 = 'select code, close from stocks_price where date = "{}"'.format(start)
     stocks = pd.read_sql(query1, conn)
     stocks = stocks.loc[np.in1d(stocks['code'], code_list_all), :].sort_values('code')
@@ -383,7 +399,7 @@ def barra_reverse_mu_all(start, window, model_data, wls_resid, factor_list2, dat
     query2 = 'select code, outstanding from stock_basics'
     outstanding = pd.read_sql(query2, conn).sort_values('code')
     
-    stocks = pd.merge(stocks, outstanding, on='code', how='left')
+    stocks = pd.merge(stocks, outstanding, on='code', how='inner')
     stocks['cap'] = stocks['close']*stocks['outstanding']
     stocks['weight'] = stocks['outstanding']/(stocks['outstanding'].sum())
     
@@ -399,12 +415,23 @@ def barra_reverse_mu_all(start, window, model_data, wls_resid, factor_list2, dat
     
     return mu_all
 
-def barra_reverse_mu(code_list, start, window, model_data, wls_resid, factor_list2, data_path, dbpath, **kwargs):
+def barra_reverse_mu(code_list, start, window, model_data, wls_resid, factor_list2, data_path, conn, **kwargs):
     
-    mu_all = barra_reverse_mu_all(start, window, model_data, wls_resid, factor_list2, data_path, dbpath)
+    mu_all = barra_reverse_mu_all(start, window, model_data, wls_resid, factor_list2, data_path, conn)
     
-    mu = mu_all.loc[np.in1d(mu_all.code, code_list), 'mu']
-    return mu
+    code_list_all  = mu_all.code
+    
+    if not np.in1d(code_list, code_list_all).all():
+        temp = np.array(code_list)[~np.in1d(code_list, code_list_all)].tolist()
+        warnings.warn('{} not available in the reverse mu calculation at {}'.format(', '.join(temp), start))
+    
+    mu = mu_all.loc[np.in1d(mu_all.code, code_list), ['code','mu']]
+    
+    mu = mu.set_index('code')['mu']
+    
+    mu = mu[code_list].fillna(0)
+    
+    return mu*252
 
 #%%
 if __name__ == '__main__':

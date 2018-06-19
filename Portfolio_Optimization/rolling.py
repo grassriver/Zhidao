@@ -33,6 +33,7 @@ from openpyxl.drawing.image import Image
 # forward fill
 def rolling(conn, stock_list, start, end, step='M', cap=1000000, 
             backfill=False, mu_method=None, sigma_method=None, opt_method=None,
+            bench_method=None, bench_cap=None,
             rf=0.03, outpath='./Portfolio_Optimization/output/', outfile='sample.xlsx'):
     delta = pd.Timedelta(1, unit=step)
     start = pd.to_datetime(start)
@@ -65,7 +66,9 @@ def rolling(conn, stock_list, start, end, step='M', cap=1000000,
                             business_calendar=business_calendar,
                             industry=industry,
                             backfill=backfill)
+
     balance = pd.Series()
+    bench_balance = pd.Series()
     while now < end:
         now_end = now + delta
         (balance, 
@@ -74,7 +77,9 @@ def rolling(conn, stock_list, start, end, step='M', cap=1000000,
          weights,
          mu, 
          sigma, 
-         stocks) = single_stage_opt(
+         stocks, 
+         bench_balance,
+         bench_cap) = single_stage_opt(
                          conn, stock_list, now, 
                          now_end, cap, balance, backfill,rf,
                          mu_method=mu_method,
@@ -83,8 +88,10 @@ def rolling(conn, stock_list, start, end, step='M', cap=1000000,
                          stocks_price_old=stocks_price_old,
                          business_calendar=business_calendar,
                          industry=industry,
-                         benchmark_old=benchmark_old
-                         )
+                         benchmark_old=benchmark_old,
+                         bench_method=bench_method,
+                         bench_balance=bench_balance,
+                         bench_cap = bench_cap)
         if sigma_method.name == 'opt_quadratic_risky_restricted':
             sigma_method.update(w0=weights)
         now = now + delta
@@ -95,17 +102,18 @@ def rolling(conn, stock_list, start, end, step='M', cap=1000000,
     
     
     combined_balance = combine_balances(conn, start, end, stock_list, 
-                                        backfill, balance, cap_old, benchmark='sh000016')
+                                        backfill, balance, bench_balance, cap_old, benchmark='sh000016')
     plot_xlsx(combined_balance, outpath, sheetname, ws)
     wb.save(outpath+outfile)
     wb.close()
     
-    return balance
+    return balance, bench_balance
 
 def single_stage_opt(conn, stock_list, start, end, cap, balance, backfill, rf, 
                      mu_method=None, sigma_method=None, opt_method=None, 
                      stocks_price_old=None, business_calendar=None, 
-                     industry=None, benchmark_old=None):
+                     industry=None, benchmark_old=None, 
+                     bench_method=None, bench_balance=None, bench_cap=None):
     #================ check date availability===========================
     start = pd.to_datetime(
             tool.first_trading_day(conn, start.strftime('%Y-%m-%d'), 
@@ -129,7 +137,16 @@ def single_stage_opt(conn, stock_list, start, end, cap, balance, backfill, rf,
 
     cap = balance[-1]
     
-    return balance, cap, mk_port, weights, mu, sigma, stocks
+    if (bench_method is not None) and (bench_method.name == 'screens'):
+        bench_weights, bench_method = update_opt(bench_method, mu)
+
+        bench_balance, _, _ = update_balance(
+            bench_balance, conn, stock_list, start, end, 
+            backfill, stocks_price_old, business_calendar, 
+            industry, bench_weights, bench_cap, benchmark_old, rf)
+        bench_cap = bench_balance[-1]       
+        
+    return balance, cap, mk_port, weights, mu, sigma, stocks, bench_balance, bench_cap
 
 def opt_info_output(code_list, weights, mu, sigma, stocks, thres=0.05):
     stocks_selected = np.array(code_list)[weights>thres].tolist()
@@ -185,7 +202,7 @@ def benchmark_price(conn, benchmark):
     bench_price.set_index('date', inplace=True)
     return bench_price
 
-def combine_balances(conn, start, end, code_list, backfill, balance, capital, benchmark='sh000016'):
+def combine_balances(conn, start, end, code_list, backfill, balance, bench_balance, capital, benchmark='sh000016'):
     # combine together
     bench_price = benchmark_price(conn, benchmark)
     ewet_port_balance = gen_ewet_port_balance(conn, start, end, code_list, capital, backfill)
@@ -197,6 +214,8 @@ def combine_balances(conn, start, end, code_list, backfill, balance, capital, be
     df = df.join(pd.DataFrame({'ewet':ewet_port_balance}))
     df.columns=['portfolio', 'benchmark', 'equal weight portfolio']
     df['benchmark'] = capital/df['benchmark'][0]*df['benchmark']
+    if not bench_balance.empty:
+        df = df.join(pd.DataFrame({'bench strategy': bench_balance}))
     return df
 
 def plot_combined_balance(combined_balance):
@@ -214,7 +233,7 @@ def update_mu(mu_method, conn, stock_list, start, backfill,
                     stocks_price_old=stocks_price_old,
                     business_calendar=business_calendar,
                     industry=industry)
-    elif mu_method.name == 'capm':
+    elif mu_method.name in ['capm', 'reverse']:
         mu_method.update(start=start.strftime('%Y-%m-%d'))
         mu = mu_method.run()
     elif mu_method.name == 'hist':
@@ -222,6 +241,11 @@ def update_mu(mu_method, conn, stock_list, start, backfill,
         mu_method.update(start = (start-pd.Timedelta(lookback_win, unit='d')).strftime('%Y-%m-%d'),
                          end = (start-pd.Timedelta(1)).strftime('%Y-%m-%d'))
         mu = mu_method.run()
+    elif mu_method.name == 'simu':
+        forecast_win = mu_method.kwargs['forecast_win']
+        mu_method.update(start = start.strftime('%Y-%m-%d'),
+                         end = (start+pd.Timedelta(forecast_win, unit='d')).strftime('%Y-%m-%d'))
+        mu = mu_method.run()        
     else:
         raise ValueError('mu_method not right!')
         
@@ -254,7 +278,7 @@ def update_sigma(sigma_method, conn, stock_list, start, backfill,
     
     return sigma, sigma_method
 
-def update_opt(opt_method, mu, sigma):
+def update_opt(opt_method, mu, sigma=None):
     #================= mean-variance optimization ======================
     if opt_method is None:
         # use numeric solution
@@ -269,8 +293,17 @@ def update_opt(opt_method, mu, sigma):
     elif opt_method.name.split('-')[0] in ['opt_quadratic', 'opt_quadratic_risky', 'opt_s', 'opt_v']:
         opt_method.update(mu=mu, sigma=sigma)
         weights = opt_method.run()
+    elif opt_method.name in ['screens']:
+        opt_method.update(alpha=mu)
+        weights = opt_method.run()
+        opt_method.update(w0=weights) 
     else:
         raise ValueError('opt_method not right!')
+    
+    if np.sum(weights) > 1.2:
+        print(mu)
+        print(sigma)
+        raise ValueError('sum of weights exceeds 100%')
     
     if np.isnan(weights).any():
         print(mu)
@@ -339,7 +372,7 @@ def plot_xlsx(combined_balance, outpath, sheetname, ws):
     img = Image(outpath+sheetname+'.png')
     utils.insert_image(img, ws)
 
-
+#%%
 if __name__ == '__main__':
     conn_path = 'D:/Kaizheng/Working_directory/portfolio_intelligence/PI/Data/data.db'
     conn = sql.connect(conn_path)
