@@ -16,7 +16,7 @@ import matplotlib.pyplot as plt
 
 from matplotlib.dates import DateFormatter, WeekdayLocator,\
     DayLocator, MONDAY
-from matplotlib.finance import candlestick_ohlc
+from mpl_finance import candlestick_ohlc
 from matplotlib.dates import date2num
 
 conn_path='C:/Users/Hillary/Documents/PI/data/data.db'
